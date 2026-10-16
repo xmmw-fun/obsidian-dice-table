@@ -1,0 +1,82 @@
+/* 骰表 Dice Table —— 骨架期样式：全部取 Obsidian 主题变量，跟随深浅色 */
+
+.dice-table-view {
+	padding: 12px 16px;
+}
+
+.dice-pick-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 12px;
+}
+
+.dice-label {
+	color: var(--text-muted);
+}
+
+.dice-pick-row select {
+	flex: 1;
+}
+
+.dice-name-row {
+	margin-bottom: 12px;
+}
+
+.dice-name {
+	color: var(--text-normal);
+	margin: 0;
+}
+
+.dice-result {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-secondary);
+	padding: 12px 16px;
+	min-height: 80px;
+	margin-bottom: 16px;
+}
+
+.dice-result-row {
+	display: flex;
+	gap: 12px;
+	padding: 4px 0;
+	align-items: center;
+}
+
+.dice-result-pool {
+	color: var(--text-muted);
+	min-width: 6em;
+	flex-shrink: 0;
+}
+
+.dice-result-value {
+	color: var(--text-normal);
+	flex: 1;
+}
+
+.dice-reroll {
+	flex-shrink: 0;
+	padding: 0 8px;
+	line-height: 1.4;
+	color: var(--text-muted);
+	background: transparent;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	cursor: pointer;
+}
+
+.dice-reroll:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.dice-result-empty {
+	color: var(--text-faint);
+	margin: 0;
+}
+
+.dice-btn-row {
+	display: flex;
+	gap: 8px;
+}
