@@ -40,7 +40,7 @@ export function renderNameTemplate(
 	};
 
 	// 变量名允许字母、数字、下划线、横杠的组合，如 {YYYYMMDD-HHmm}
-	let out = template.replace(/\{H2(?::(\d+))?\}/g, (_m, idxStr) => {
+	let out = template.replace(/\{H2(?::(\d+))?\}/g, (_m: string, idxStr: string | undefined) => {
 		const idx = idxStr ? parseInt(idxStr, 10) - 1 : 0;
 		return vars.h2List[idx] ?? "";
 	});

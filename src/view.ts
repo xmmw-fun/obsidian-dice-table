@@ -58,11 +58,12 @@ export class DiceTableView extends ItemView {
 	/** 文件变化防抖刷新，尽量保留当前选择 */
 	private scheduleRefresh(): void {
 		if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
-		this.refreshTimer = window.setTimeout(async () => {
-			this.refreshTimer = null;
-			const keepFile = this.currentFile;
-			const keepDiceTitle = this.currentDice?.title;
-			await this.refreshTableList(keepFile);
+		this.refreshTimer = window.setTimeout(() => {
+			void (async () => {
+				this.refreshTimer = null;
+				const keepFile = this.currentFile;
+				const keepDiceTitle = this.currentDice?.title;
+				await this.refreshTableList(keepFile);
 			if (keepDiceTitle) {
 				const idx = this.diceList.findIndex((d) => d.title === keepDiceTitle);
 				if (idx !== -1) this.diceIndex = idx;
@@ -70,6 +71,7 @@ export class DiceTableView extends ItemView {
 			this.currentDice = this.diceList[this.diceIndex] ?? null;
 			this.lastResult = null;
 			this.render();
+			})();
 		}, 500);
 	}
 
@@ -128,14 +130,13 @@ export class DiceTableView extends ItemView {
 		}
 		for (const f of this.tableFiles) {
 			const opt = select.createEl("option");
-			(opt as HTMLOptionElement).value = f;
-			(opt as HTMLOptionElement).textContent = f.split("/").pop()!;
-			if (f === this.currentFile) (opt as HTMLOptionElement).selected = true;
+			opt.value = f;
+			opt.textContent = f.split("/").pop()!;
+			if (f === this.currentFile) opt.selected = true;
 		}
-		select.addEventListener("change", async () => {
-			this.currentFile = (select as HTMLSelectElement).value;
-			await this.loadCurrentFile();
-			this.render();
+		select.addEventListener("change", () => {
+			this.currentFile = select.value;
+			void this.loadCurrentFile().then(() => this.render());
 		});
 
 		// ── 选骰子行（文件内有多个 H1 时出现）──
@@ -145,12 +146,12 @@ export class DiceTableView extends ItemView {
 			const diceSelect = diceRow.createEl("select", { cls: "dropdown" });
 			for (let i = 0; i < this.diceList.length; i++) {
 				const opt = diceSelect.createEl("option");
-				(opt as HTMLOptionElement).value = String(i);
-				(opt as HTMLOptionElement).textContent = this.diceList[i].title;
-				if (i === this.diceIndex) (opt as HTMLOptionElement).selected = true;
+				opt.value = String(i);
+				opt.textContent = this.diceList[i].title;
+				if (i === this.diceIndex) opt.selected = true;
 			}
 			diceSelect.addEventListener("change", () => {
-				this.diceIndex = parseInt((diceSelect as HTMLSelectElement).value, 10);
+				this.diceIndex = parseInt(diceSelect.value, 10);
 				this.currentDice = this.diceList[this.diceIndex] ?? null;
 				this.lastResult = null;
 				this.render();
@@ -171,8 +172,8 @@ export class DiceTableView extends ItemView {
 			for (let i = 0; i < this.lastResult.length; i++) {
 				const item = this.lastResult[i];
 				const row = resultBox.createDiv({ cls: "dice-result-row" });
-				row.createEl("span", { text: item.pool.title, cls: "dice-result-pool" });
-				row.createEl("span", { text: item.values.join("，"), cls: "dice-result-value" });
+				row.createSpan({ text: item.pool.title, cls: "dice-result-pool" });
+				row.createSpan({ text: item.values.join("，"), cls: "dice-result-value" });
 				const reroll = row.createEl("button");
 				reroll.textContent = "↻";
 				reroll.addClass("dice-reroll");
@@ -192,7 +193,7 @@ export class DiceTableView extends ItemView {
 		const saveBtn = btnRow.createEl("button");
 		saveBtn.textContent = "一键保存";
 		saveBtn.disabled = !this.lastResult;
-		saveBtn.addEventListener("click", () => this.onSave());
+		saveBtn.addEventListener("click", () => void this.onSave());
 	}
 
 	private onRoll(): void {

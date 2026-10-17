@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting, TFolder } from "obsidian";
+import { App, PluginSettingTab, Setting, TFolder, SettingDefinitionItem } from "obsidian";
 import type DiceTablePlugin from "./main";
 import { FolderSuggest } from "./folder-suggest";
 
@@ -29,6 +29,65 @@ export class DiceTableSettingTab extends PluginSettingTab {
 	constructor(app: App, plugin: DiceTablePlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
+	}
+
+	/**
+	 * 声明式设置（Obsidian 1.13+ 的设置搜索用；旧版本仍走 display()）。
+	 * 读写钩子用基类默认实现：按 key 直接读写 plugin.settings 并持久化。
+	 */
+	getSettingDefinitions(): SettingDefinitionItem[] {
+		return [
+			{
+				name: "骰表文件夹",
+				desc: "插件从这里读取所有 .md 骰表（H1＝骰子名，H2＝项，- ＝面）。新路径保存时自动创建",
+				control: {
+					type: "folder",
+					key: "diceFolder",
+					placeholder: "骰表",
+					defaultValue: DEFAULT_SETTINGS.diceFolder,
+				},
+			},
+			{
+				name: "默认保存文件夹",
+				desc: "「一键保存」把结果存到这里。新路径保存时自动创建",
+				control: {
+					type: "folder",
+					key: "saveFolder",
+					placeholder: "骰子结果",
+					defaultValue: DEFAULT_SETTINGS.saveFolder,
+				},
+			},
+			{
+				name: "文件命名模板",
+				desc: "大括号里是变量，外面是固定文字。可用：{H1} {H2} {H2:2} {YYYY} {MM} {DD} {HH} {mm} {ss} {WW} {YYYYMMDD}",
+				control: {
+					type: "text",
+					key: "nameTemplate",
+					placeholder: "{H1}_{YYYYMMDD-HHmm}",
+					defaultValue: DEFAULT_SETTINGS.nameTemplate,
+				},
+			},
+			{
+				name: "保存格式",
+				desc: "「一键保存」按此格式保存：Markdown 文档 / PNG 图片 / JPG 图片",
+				control: {
+					type: "dropdown",
+					key: "saveFormat",
+					options: { markdown: "Markdown", png: "PNG 图片", jpg: "JPG 图片" },
+					defaultValue: DEFAULT_SETTINGS.saveFormat,
+				},
+			},
+			{
+				name: "打开位置",
+				desc: "点左侧骰子图标时，操作界面开在哪里",
+				control: {
+					type: "dropdown",
+					key: "openLocation",
+					options: { main: "主区新标签页", sidebar: "右侧栏" },
+					defaultValue: DEFAULT_SETTINGS.openLocation,
+				},
+			},
+		];
 	}
 
 	display(): void {

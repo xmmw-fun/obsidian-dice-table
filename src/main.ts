@@ -12,7 +12,7 @@ export default class DiceTablePlugin extends Plugin {
 
 		// 左侧快捷图标：按设置决定开在哪
 		this.addRibbonIcon("dices", "骰表：打开操作界面", () => {
-			this.activateView();
+			void this.activateView();
 		});
 
 		// 命令面板入口（ID 不带插件 ID，Obsidian 自动加前缀避免冲突）
@@ -32,7 +32,8 @@ export default class DiceTablePlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const loaded = (await this.loadData()) as Partial<DiceTableSettings> | null;
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded);
 	}
 
 	async saveSettings(): Promise<void> {
@@ -49,7 +50,7 @@ export default class DiceTablePlugin extends Plugin {
 			const inSidebar = this.isInSidebar(leaf);
 			if (inSidebar === (this.settings.openLocation === "sidebar")) {
 				// 位置符合设置，只聚焦
-				workspace.revealLeaf(leaf);
+				void workspace.revealLeaf(leaf);
 				return;
 			}
 			// 位置不符：挪到新位置（用 setViewState 原地换容器，状态不丢）
@@ -58,13 +59,13 @@ export default class DiceTablePlugin extends Plugin {
 				const target = workspace.getRightLeaf(false);
 				if (target) {
 					await target.setViewState(state);
-					workspace.revealLeaf(target);
+					void workspace.revealLeaf(target);
 				}
 			} else {
 				const target = workspace.getLeaf(true);
 				if (target) {
 					await target.setViewState(state);
-					workspace.revealLeaf(target);
+					void workspace.revealLeaf(target);
 				}
 			}
 			return;
@@ -81,7 +82,7 @@ export default class DiceTablePlugin extends Plugin {
 			return;
 		}
 		await leaf.setViewState({ type: VIEW_TYPE_DICE_TABLE, active: true });
-		workspace.revealLeaf(leaf);
+		void workspace.revealLeaf(leaf);
 	}
 
 	/** 判断一个 leaf 是否在左/右侧栏里（沿父节点向上找侧栏容器） */
