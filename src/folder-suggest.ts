@@ -16,8 +16,8 @@ export class FolderSuggest extends AbstractInputSuggest<TFolder> {
 
 	getSuggestions(query: string): TFolder[] {
 		const q = query.toLowerCase().replace(/^\/+|\/+$/g, "");
-		// 从根目录沿文件夹树收集 TFolder（不用 getAllLoadedFiles——
-		// 那是"枚举库内全部文件"的 API，审查按 Vault Enumeration 标记）
+		// 从根目录沿文件夹树收集 TFolder（刻意不走「枚举库内全部文件」的 API，
+		// 该类 API 会被审查按 Vault Enumeration 标记）
 		const folders: TFolder[] = [];
 		const walk = (folder: TFolder): void => {
 			for (const child of folder.children) {

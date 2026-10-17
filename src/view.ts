@@ -107,8 +107,8 @@ export class DiceTableView extends ItemView {
 		this.lastResult = null;
 		if (!this.currentFile) return;
 		const file = this.app.vault.getAbstractFileByPath(this.currentFile);
-		if (!file) return;
-		const text = await this.app.vault.read(file as TFile);
+		if (!(file instanceof TFile)) return;
+		const text = await this.app.vault.read(file);
 		const parsed = parseTable(text);
 		this.diceList = parsed.diceList;
 		this.currentDice = this.diceList[0] ?? null;

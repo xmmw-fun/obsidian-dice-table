@@ -15,9 +15,9 @@ export default class DiceTablePlugin extends Plugin {
 			this.activateView();
 		});
 
-		// 命令面板入口
+		// 命令面板入口（ID 不带插件 ID，Obsidian 自动加前缀避免冲突）
 		this.addCommand({
-			id: "open-dice-table",
+			id: "open",
 			name: "打开骰表操作界面",
 			callback: () => this.activateView(),
 		});
@@ -25,8 +25,10 @@ export default class DiceTablePlugin extends Plugin {
 		this.addSettingTab(new DiceTableSettingTab(this.app, this));
 	}
 
+	// 注意：不要在 onunload 里 detach leaves——那会把界面重置回默认位置，
+	// 用户自己挪过位置的话重载后就丢了（官方指南明确禁止）。
 	onunload(): void {
-		this.app.workspace.detachLeavesOfType(VIEW_TYPE_DICE_TABLE);
+		// 保留空实现：事件与视图均由 this.register* 自动清理
 	}
 
 	async loadSettings(): Promise<void> {

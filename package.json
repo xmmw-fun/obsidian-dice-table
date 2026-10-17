@@ -1,6 +1,6 @@
 {
   "name": "obsidian-dice-table",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Dice Table - roll and save random result sets from Markdown dice tables",
   "main": "main.js",
   "scripts": {
@@ -9,7 +9,6 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "builtin-modules": "^4.0.0",
     "esbuild": "^0.24.0",
     "eslint": "^9.39.5",
     "eslint-plugin-obsidianmd": "^0.4.2",
