@@ -1,6 +1,7 @@
 import { App, PluginSettingTab, Setting, TFolder, SettingDefinitionItem } from "obsidian";
 import type DiceTablePlugin from "./main";
 import { FolderSuggest } from "./folder-suggest";
+import { t } from "./i18n";
 
 export interface DiceTableSettings {
 	/** 骰表文件夹（库内相对路径） */
@@ -11,6 +12,10 @@ export interface DiceTableSettings {
 	nameTemplate: string;
 	/** 保存格式 */
 	saveFormat: "markdown" | "png" | "jpg";
+	/** 保存方式：每次存新文件 / 追加到同一文件（追加仅支持 Markdown） */
+	saveMode: "newfile" | "append";
+	/** 追加模式下目标文件名模板（存放在保存文件夹里） */
+	appendFileTemplate: string;
 	/** 打开位置：主区新标签页 / 右侧栏 */
 	openLocation: "main" | "sidebar";
 }
@@ -20,6 +25,8 @@ export const DEFAULT_SETTINGS: DiceTableSettings = {
 	saveFolder: "骰子结果",
 	nameTemplate: "{H1}_{YYYYMMDD-HHmm}",
 	saveFormat: "markdown",
+	saveMode: "newfile",
+	appendFileTemplate: "{H1}",
 	openLocation: "main",
 };
 
@@ -32,14 +39,31 @@ export class DiceTableSettingTab extends PluginSettingTab {
 	}
 
 	/**
+	 * 接管声明式控件的写入（1.13+ 渲染路径）：
+	 * 写设置 → 冲突纠正（追加仅支持 Markdown）→ 持久化 → update() 重渲染使互锁即时生效。
+	 */
+	async setControlValue(key: string, value: unknown): Promise<void> {
+		const s = this.plugin.settings as unknown as Record<string, unknown>;
+		if (!(key in s)) return;
+		s[key] = value;
+		if (key === "saveMode" && value === "append" && this.plugin.settings.saveFormat !== "markdown") {
+			this.plugin.settings.saveFormat = "markdown";
+		} else if (key === "saveFormat" && value !== "markdown" && this.plugin.settings.saveMode === "append") {
+			this.plugin.settings.saveMode = "newfile";
+		}
+		await this.plugin.saveSettings();
+		if (key === "saveFormat" || key === "saveMode") this.update();
+	}
+
+	/**
 	 * 声明式设置（Obsidian 1.13+ 的设置搜索用；旧版本仍走 display()）。
 	 * 读写钩子用基类默认实现：按 key 直接读写 plugin.settings 并持久化。
 	 */
 	getSettingDefinitions(): SettingDefinitionItem[] {
 		return [
 			{
-				name: "骰表文件夹",
-				desc: "插件从这里读取所有 .md 骰表（H1＝骰子名，H2＝项，- ＝面）。新路径保存时自动创建",
+				name: t("sDiceFolder"),
+				desc: t("sDiceFolderDesc"),
 				control: {
 					type: "folder",
 					key: "diceFolder",
@@ -48,8 +72,8 @@ export class DiceTableSettingTab extends PluginSettingTab {
 				},
 			},
 			{
-				name: "默认保存文件夹",
-				desc: "「一键保存」把结果存到这里。新路径保存时自动创建",
+				name: t("sSaveFolder"),
+				desc: t("sSaveFolderDesc"),
 				control: {
 					type: "folder",
 					key: "saveFolder",
@@ -58,8 +82,8 @@ export class DiceTableSettingTab extends PluginSettingTab {
 				},
 			},
 			{
-				name: "文件命名模板",
-				desc: "大括号里是变量，外面是固定文字。可用：{H1} {H2} {H2:2} {YYYY} {MM} {DD} {HH} {mm} {ss} {WW} {YYYYMMDD}",
+				name: t("sNameTemplate"),
+				desc: t("sNameTemplateDesc"),
 				control: {
 					type: "text",
 					key: "nameTemplate",
@@ -68,22 +92,50 @@ export class DiceTableSettingTab extends PluginSettingTab {
 				},
 			},
 			{
-				name: "保存格式",
-				desc: "「一键保存」按此格式保存：Markdown 文档 / PNG 图片 / JPG 图片",
+				name: t("sSaveFormat"),
+				desc: t("sSaveFormatDesc"),
 				control: {
 					type: "dropdown",
 					key: "saveFormat",
-					options: { markdown: "Markdown", png: "PNG 图片", jpg: "JPG 图片" },
+					// 互锁：追加模式下图片选项直接不渲染（追加仅支持 Markdown）
+					options:
+						this.plugin.settings.saveMode === "append"
+							? { markdown: t("optMarkdown") }
+							: { markdown: t("optMarkdown"), png: t("optPng"), jpg: t("optJpg") },
 					defaultValue: DEFAULT_SETTINGS.saveFormat,
 				},
 			},
 			{
-				name: "打开位置",
-				desc: "点左侧骰子图标时，操作界面开在哪里",
+				name: t("sSaveMode"),
+				desc: t("sSaveModeDesc"),
+				control: {
+					type: "dropdown",
+					key: "saveMode",
+					// 互锁：图片格式下追加选项直接不渲染
+					options:
+						this.plugin.settings.saveFormat !== "markdown"
+							? { newfile: t("optNewFile") }
+							: { newfile: t("optNewFile"), append: t("optAppend") },
+					defaultValue: DEFAULT_SETTINGS.saveMode,
+				},
+			},
+			{
+				name: t("sAppendTemplate"),
+				desc: t("sAppendTemplateDesc"),
+				control: {
+					type: "text",
+					key: "appendFileTemplate",
+					placeholder: "{H1}",
+					defaultValue: DEFAULT_SETTINGS.appendFileTemplate,
+				},
+			},
+			{
+				name: t("sOpenLocation"),
+				desc: t("sOpenLocationDesc"),
 				control: {
 					type: "dropdown",
 					key: "openLocation",
-					options: { main: "主区新标签页", sidebar: "右侧栏" },
+					options: { main: t("optMain"), sidebar: t("optSidebar") },
 					defaultValue: DEFAULT_SETTINGS.openLocation,
 				},
 			},
@@ -93,15 +145,13 @@ export class DiceTableSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-		new Setting(containerEl).setName("通用").setHeading();
+		new Setting(containerEl).setName(t("sHeading")).setHeading();
 
 		new Setting(containerEl)
-			.setName("骰表文件夹")
-			.setDesc("插件从这里读取所有 .md 骰表（一个文件＝一套表：H1＝骰子名，H2＝项，- ＝面）。输入时下拉提示库里已有文件夹；没有的路径也可直接输入，保存时自动创建")
+			.setName(t("sDiceFolder"))
+			.setDesc(t("sDiceFolderDesc"))
 			.addText((text) => {
-				text
-					.setPlaceholder("骰表")
-					.setValue(this.plugin.settings.diceFolder);
+				text.setPlaceholder("骰表").setValue(this.plugin.settings.diceFolder);
 				new FolderSuggest(this.app, text.inputEl, (picked) => {
 					this.plugin.settings.diceFolder = picked || DEFAULT_SETTINGS.diceFolder;
 					text.setValue(picked);
@@ -114,12 +164,10 @@ export class DiceTableSettingTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName("默认保存文件夹")
-			.setDesc("点「一键保存」时，摇出的结果存到这里。输入时下拉提示库里已有文件夹；没有的路径也可直接输入，保存时自动创建")
+			.setName(t("sSaveFolder"))
+			.setDesc(t("sSaveFolderDesc"))
 			.addText((text) => {
-				text
-					.setPlaceholder("骰子结果")
-					.setValue(this.plugin.settings.saveFolder);
+				text.setPlaceholder("骰子结果").setValue(this.plugin.settings.saveFolder);
 				new FolderSuggest(this.app, text.inputEl, (picked) => {
 					this.plugin.settings.saveFolder = picked || DEFAULT_SETTINGS.saveFolder;
 					text.setValue(picked);
@@ -132,10 +180,8 @@ export class DiceTableSettingTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName("文件命名模板")
-			.setDesc(
-				"大括号里是变量，外面是固定文字。可用变量：{H1} {H2} {H2:2} {YYYY} {MM} {DD} {HH} {mm} {ss} {WW} {YYYYMMDD}。默认 {H1}_{YYYYMMDD-HHmm}"
-			)
+			.setName(t("sNameTemplate"))
+			.setDesc(t("sNameTemplateDesc"))
 			.addText((text) =>
 				text
 					.setPlaceholder("{H1}_{YYYYMMDD-HHmm}")
@@ -147,27 +193,74 @@ export class DiceTableSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("保存格式")
-			.setDesc("「一键保存」按此格式保存结果：Markdown 文档 / PNG 图片 / JPG 图片（图片为固化的结果卡，跟随导出时的深浅色）")
-			.addDropdown((drop) =>
-				drop
-					.addOption("markdown", "Markdown")
-					.addOption("png", "PNG 图片")
-					.addOption("jpg", "JPG 图片")
-					.setValue(this.plugin.settings.saveFormat)
+			.setName(t("sSaveFormat"))
+			.setDesc(t("sSaveFormatDesc"))
+			.addDropdown((drop) => {
+				drop.addOption("markdown", t("optMarkdown"))
+					.addOption("png", t("optPng"))
+					.addOption("jpg", t("optJpg"));
+				// 互锁：追加模式下图片格式不可选（追加仅支持 Markdown）
+				if (this.plugin.settings.saveMode === "append") {
+					for (const opt of Array.from(drop.selectEl.options)) {
+						if (opt.value !== "markdown") opt.disabled = true;
+					}
+				}
+				drop.setValue(this.plugin.settings.saveFormat).onChange(async (v) => {
+					this.plugin.settings.saveFormat = v as DiceTableSettings["saveFormat"];
+					// 互锁纠正：切到图片格式时，把保存方式自动纠正回「新文件」（追加仅支持 Markdown）
+					if (this.plugin.settings.saveFormat !== "markdown" && this.plugin.settings.saveMode === "append") {
+						this.plugin.settings.saveMode = "newfile";
+					}
+					await this.plugin.saveSettings();
+					// 重渲染设置页，让保存方式下拉的灰显状态即时更新
+					this.display();
+				});
+			});
+
+		new Setting(containerEl)
+			.setName(t("sSaveMode"))
+			.setDesc(t("sSaveModeDesc"))
+			.addDropdown((drop) => {
+				drop.addOption("newfile", t("optNewFile")).addOption("append", t("optAppend"));
+				// 互锁：图片格式下追加模式不可选（追加仅支持 Markdown）
+				if (this.plugin.settings.saveFormat !== "markdown") {
+					for (const opt of Array.from(drop.selectEl.options)) {
+						if (opt.value === "append") opt.disabled = true;
+					}
+				}
+				drop.setValue(this.plugin.settings.saveMode)
 					.onChange(async (v) => {
-						this.plugin.settings.saveFormat = v as DiceTableSettings["saveFormat"];
+						this.plugin.settings.saveMode = v as DiceTableSettings["saveMode"];
+						// 互锁纠正：切到追加模式时，把保存格式自动纠正回 Markdown（追加不支持图片）
+						if (this.plugin.settings.saveMode === "append" && this.plugin.settings.saveFormat !== "markdown") {
+							this.plugin.settings.saveFormat = "markdown";
+						}
+						await this.plugin.saveSettings();
+						// 重渲染设置页，让保存格式下拉的灰显状态即时更新
+						this.display();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName(t("sAppendTemplate"))
+			.setDesc(t("sAppendTemplateDesc"))
+			.addText((text) =>
+				text
+					.setPlaceholder("{H1}")
+					.setValue(this.plugin.settings.appendFileTemplate)
+					.onChange(async (v) => {
+						this.plugin.settings.appendFileTemplate = v.trim() || DEFAULT_SETTINGS.appendFileTemplate;
 						await this.plugin.saveSettings();
 					})
 			);
 
 		new Setting(containerEl)
-			.setName("打开位置")
-			.setDesc("点左侧骰子图标时，操作界面开在哪里")
+			.setName(t("sOpenLocation"))
+			.setDesc(t("sOpenLocationDesc"))
 			.addDropdown((drop) =>
 				drop
-					.addOption("main", "主区新标签页")
-					.addOption("sidebar", "右侧栏")
+					.addOption("main", t("optMain"))
+					.addOption("sidebar", t("optSidebar"))
 					.setValue(this.plugin.settings.openLocation)
 					.onChange(async (v) => {
 						this.plugin.settings.openLocation = v as DiceTableSettings["openLocation"];

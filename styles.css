@@ -80,3 +80,43 @@
 	display: flex;
 	gap: 8px;
 }
+
+/* 历史区 */
+.dice-history {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	padding: 8px 12px;
+	margin-top: 12px;
+}
+
+.dice-history summary {
+	color: var(--text-muted);
+	cursor: pointer;
+	user-select: none;
+}
+
+.dice-history-row {
+	display: flex;
+	gap: 8px;
+	align-items: baseline;
+	padding: 4px 0;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.dice-history-row:first-of-type {
+	border-top: none;
+}
+
+.dice-history-time {
+	color: var(--text-faint);
+	flex-shrink: 0;
+	font-variant-numeric: tabular-nums;
+}
+
+.dice-history-text {
+	color: var(--text-muted);
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}

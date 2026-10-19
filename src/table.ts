@@ -1,11 +1,19 @@
 // 骰表解析与摇骰引擎
 // 结构约定：# H1 = 骰子名；## H2 = 要摇的项（池）；"- " 条目 = 可摇出的面
+// 面可带权重：`- 条目 ^2` = 被抽中概率 ×2（2026-10-17 拍板，写法对齐 Perhaps）
+
+export interface Face {
+	/** 面的文本（已剥掉 ^N 权重标记） */
+	text: string;
+	/** 权重，默认 1；`^2` 即 ×2 */
+	weight: number;
+}
 
 export interface Pool {
 	/** H2 标题文字（已剥掉 ×N 多选标记后的干净名称） */
 	title: string;
 	/** 该池下的所有面（横杠条目） */
-	faces: string[];
+	faces: Face[];
 	/** 一次摇几条（默认 1；`## 池 ×3` 即摇 3 条） */
 	count: number;
 	/** 是否允许重复（默认 false；标记「重复」/`repeat`/`r` 后为 true） */
@@ -64,10 +72,10 @@ export function parseTable(text: string): ParsedTable {
 			continue;
 		}
 
-		// 面：横杠条目
+		// 面：横杠条目（尾部可带权重 ^N）
 		const face = line.match(/^[-*]\s+(.+)$/);
 		if (face && currentPool) {
-			currentPool.faces.push(face[1].trim());
+			currentPool.faces.push(parseFace(face[1].trim()));
 		}
 	}
 
@@ -90,23 +98,43 @@ export function parsePoolTitle(raw: string): { title: string; count: number; all
 	return { title: (m[4] ?? "").trim(), count: Math.max(1, parseInt(m[5], 10)), allowRepeat: false };
 }
 
-/** 从单个池摇出 values（按 count；不重复时洗牌抽样，面数不足则给全部） */
+/** 解析面尾部的权重标记：`稀有掉落 ^2` → text=稀有掉落, weight=2；无标记权重 1 */
+export function parseFace(raw: string): Face {
+	const m = raw.match(/^(.*?)\s*\^(\d+)$/);
+	if (!m || m[1] === "") return { text: raw, weight: 1 };
+	return { text: m[1].trim(), weight: Math.max(1, parseInt(m[2], 10)) };
+}
+
+/** 按权重随机挑一个下标（cumulative picking） */
+function weightedIndex(weights: number[]): number {
+	const total = weights.reduce((a, b) => a + b, 0);
+	let r = Math.random() * total;
+	for (let i = 0; i < weights.length; i++) {
+		r -= weights[i];
+		if (r < 0) return i;
+	}
+	return weights.length - 1;
+}
+
+/** 从单个池摇出 values（按 count；不重复时按权重不放回抽样，面数不足则给全部） */
 export function rollPoolValues(pool: Pool): string[] {
 	if (pool.faces.length === 0) return ["（该池没有可摇的条目）"];
 	const n = Math.min(Math.max(1, pool.count), pool.allowRepeat ? pool.count : pool.faces.length);
 	if (!pool.allowRepeat) {
-		// 不重复：洗牌取前 n 条
-		const idx = pool.faces.map((_, i) => i);
-		for (let i = idx.length - 1; i > 0; i--) {
-			const j = Math.floor(Math.random() * (i + 1));
-			[idx[i], idx[j]] = [idx[j], idx[i]];
+		// 不重复：加权不放回抽样（逐次按权重抽、抽中即移除）
+		const items = pool.faces.map((f, i) => ({ i, w: f.weight }));
+		const picked: string[] = [];
+		for (let k = 0; k < n; k++) {
+			const idx = weightedIndex(items.map((it) => it.w));
+			picked.push(pool.faces[items[idx].i].text);
+			items.splice(idx, 1);
 		}
-		return idx.slice(0, n).map((i) => pool.faces[i]);
+		return picked;
 	}
-	// 可重复：每次独立摇
+	// 可重复：每次独立按权重摇
 	const out: string[] = [];
 	for (let i = 0; i < n; i++) {
-		out.push(pool.faces[Math.floor(Math.random() * pool.faces.length)]);
+		out.push(pool.faces[weightedIndex(pool.faces.map((f) => f.weight))].text);
 	}
 	return out;
 }

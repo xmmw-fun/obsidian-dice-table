@@ -1,6 +1,7 @@
 import { Notice, Plugin, WorkspaceLeaf } from "obsidian";
 import { DiceTableSettingTab, DEFAULT_SETTINGS, DiceTableSettings } from "./settings";
 import { DiceTableView, VIEW_TYPE_DICE_TABLE } from "./view";
+import { t } from "./i18n";
 
 export default class DiceTablePlugin extends Plugin {
 	settings!: DiceTableSettings;
@@ -11,14 +12,14 @@ export default class DiceTablePlugin extends Plugin {
 		this.registerView(VIEW_TYPE_DICE_TABLE, (leaf: WorkspaceLeaf) => new DiceTableView(leaf, this));
 
 		// 左侧快捷图标：按设置决定开在哪
-		this.addRibbonIcon("dices", "骰表：打开操作界面", () => {
+		this.addRibbonIcon("dices", t("ribbonTooltip"), () => {
 			void this.activateView();
 		});
 
 		// 命令面板入口（ID 不带插件 ID，Obsidian 自动加前缀避免冲突）
 		this.addCommand({
 			id: "open",
-			name: "打开骰表操作界面",
+			name: t("commandOpen"),
 			callback: () => this.activateView(),
 		});
 
@@ -34,6 +35,11 @@ export default class DiceTablePlugin extends Plugin {
 	async loadSettings(): Promise<void> {
 		const loaded = (await this.loadData()) as Partial<DiceTableSettings> | null;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded);
+		// 兼容旧数据：追加模式只支持 Markdown，矛盾组合自动纠正
+		if (this.settings.saveMode === "append" && this.settings.saveFormat !== "markdown") {
+			this.settings.saveFormat = "markdown";
+			void this.saveSettings();
+		}
 	}
 
 	async saveSettings(): Promise<void> {
@@ -78,7 +84,7 @@ export default class DiceTablePlugin extends Plugin {
 			leaf = workspace.getLeaf(true);
 		}
 		if (!leaf) {
-			new Notice("无法打开骰表界面");
+			new Notice(t("openFailNotice"));
 			return;
 		}
 		await leaf.setViewState({ type: VIEW_TYPE_DICE_TABLE, active: true });
