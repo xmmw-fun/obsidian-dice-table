@@ -1,12 +1,14 @@
 // 界面多语言：自动跟随 Obsidian 语言设置（阿麦拍板，无手动切换项）
-// Obsidian 把界面语言存于 localStorage 的 "language" 键（如 zh / zh-TW / en / ja…）。
+// 用官方 getLanguage()（@since 1.8.7）读取当前语言（如 zh / en / ja…）。
 // 规则：zh 开头 → 中文；其余一律英文兜底。用户零设置。
+
+import { getLanguage } from "obsidian";
 
 export type Lang = "zh" | "en";
 
 function detectLang(): Lang {
 	try {
-		const v = window.localStorage.getItem("language") ?? "en";
+		const v = getLanguage() ?? "en";
 		return v.toLowerCase().startsWith("zh") ? "zh" : "en";
 	} catch {
 		return "en";

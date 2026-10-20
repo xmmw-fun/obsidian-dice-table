@@ -55,27 +55,27 @@ export function parseTable(text: string): ParsedTable {
 		const line = rawLine.trimEnd();
 
 		// H1：骰子名（恰好一个 #，且不是 ##）
-		const h1 = line.match(/^#\s+(.+)$/);
-		if (h1) {
-			current = { title: h1[1].trim(), pools: [] };
+		const h1 = /^#\s+(?<text>.+)$/.exec(line);
+		if (h1?.groups) {
+			current = { title: h1.groups.text.trim(), pools: [] };
 			currentPool = null;
 			diceList.push(current);
 			continue;
 		}
 
 		// H2：池（标题尾部可带多选标记：×3 / *3 / x3 / X3，可选接「重复」/repeat/r）
-		const h2 = line.match(/^##\s+(.+)$/);
-		if (h2 && current) {
-			const { title, count, allowRepeat } = parsePoolTitle(h2[1].trim());
+		const h2 = /^##\s+(?<text>.+)$/.exec(line);
+		if (h2?.groups && current) {
+			const { title, count, allowRepeat } = parsePoolTitle(h2.groups.text.trim());
 			currentPool = { title, count, allowRepeat, faces: [] };
 			current.pools.push(currentPool);
 			continue;
 		}
 
 		// 面：横杠条目（尾部可带权重 ^N）
-		const face = line.match(/^[-*]\s+(.+)$/);
-		if (face && currentPool) {
-			currentPool.faces.push(parseFace(face[1].trim()));
+		const face = /^[-*]\s+(?<text>.+)$/.exec(line);
+		if (face?.groups && currentPool) {
+			currentPool.faces.push(parseFace(face.groups.text.trim()));
 		}
 	}
 
@@ -90,19 +90,30 @@ export function parseTable(text: string): ParsedTable {
  * 空格一律不加：`×3 重复`、`×3 repeat` 这类带空格的写法不认（防止混乱）。
  */
 export function parsePoolTitle(raw: string): { title: string; count: number; allowRepeat: boolean } {
-	const m = raw.match(/^(.*?)\s*[×xX*]\s*(\d+)(重复|repeat|r)\s*$|^(.*?)\s*[×xX*]\s*(\d+)\s*$/i);
-	if (!m) return { title: raw, count: 1, allowRepeat: false };
-	if (m[1] !== undefined) {
-		return { title: m[1].trim(), count: Math.max(1, parseInt(m[2], 10)), allowRepeat: true };
+	const repeat = /^(?<name>.*?)\s*[×xX*]\s*(?<n>\d+)(?:重复|repeat|r)\s*$/i.exec(raw);
+	if (repeat?.groups) {
+		return {
+			title: repeat.groups.name.trim(),
+			count: Math.max(1, parseInt(repeat.groups.n, 10)),
+			allowRepeat: true,
+		};
 	}
-	return { title: (m[4] ?? "").trim(), count: Math.max(1, parseInt(m[5], 10)), allowRepeat: false };
+	const plain = /^(?<name>.*?)\s*[×xX*]\s*(?<n>\d+)\s*$/.exec(raw);
+	if (plain?.groups) {
+		return {
+			title: plain.groups.name.trim(),
+			count: Math.max(1, parseInt(plain.groups.n, 10)),
+			allowRepeat: false,
+		};
+	}
+	return { title: raw, count: 1, allowRepeat: false };
 }
 
 /** 解析面尾部的权重标记：`稀有掉落 ^2` → text=稀有掉落, weight=2；无标记权重 1 */
 export function parseFace(raw: string): Face {
-	const m = raw.match(/^(.*?)\s*\^(\d+)$/);
-	if (!m || m[1] === "") return { text: raw, weight: 1 };
-	return { text: m[1].trim(), weight: Math.max(1, parseInt(m[2], 10)) };
+	const m = /^(?<name>.+?)\s*\^(?<n>\d+)$/.exec(raw);
+	if (!m?.groups) return { text: raw, weight: 1 };
+	return { text: m.groups.name.trim(), weight: Math.max(1, parseInt(m.groups.n, 10)) };
 }
 
 /** 按权重随机挑一个下标（cumulative picking） */

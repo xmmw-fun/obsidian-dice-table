@@ -1,6 +1,5 @@
-import { App, PluginSettingTab, Setting, TFolder, SettingDefinitionItem } from "obsidian";
+import { App, PluginSettingTab, TFolder, SettingDefinitionItem } from "obsidian";
 import type DiceTablePlugin from "./main";
-import { FolderSuggest } from "./folder-suggest";
 import { t } from "./i18n";
 
 export interface DiceTableSettings {
@@ -56,8 +55,8 @@ export class DiceTableSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * 声明式设置（Obsidian 1.13+ 的设置搜索用；旧版本仍走 display()）。
-	 * 读写钩子用基类默认实现：按 key 直接读写 plugin.settings 并持久化。
+	 * 声明式设置（Obsidian 1.13+；minAppVersion 已要求 1.13.0）。
+	 * 写入经重写的 setControlValue 钩子：写值→冲突纠正→持久化→update() 重渲染互锁。
 	 */
 	getSettingDefinitions(): SettingDefinitionItem[] {
 		return [
@@ -140,133 +139,6 @@ export class DiceTableSettingTab extends PluginSettingTab {
 				},
 			},
 		];
-	}
-
-	display(): void {
-		const { containerEl } = this;
-		containerEl.empty();
-		new Setting(containerEl).setName(t("sHeading")).setHeading();
-
-		new Setting(containerEl)
-			.setName(t("sDiceFolder"))
-			.setDesc(t("sDiceFolderDesc"))
-			.addText((text) => {
-				text.setPlaceholder("骰表").setValue(this.plugin.settings.diceFolder);
-				new FolderSuggest(this.app, text.inputEl, (picked) => {
-					this.plugin.settings.diceFolder = picked || DEFAULT_SETTINGS.diceFolder;
-					text.setValue(picked);
-					void this.plugin.saveSettings();
-				});
-				text.onChange(async (v) => {
-					this.plugin.settings.diceFolder = v.trim() || DEFAULT_SETTINGS.diceFolder;
-					await this.plugin.saveSettings();
-				});
-			});
-
-		new Setting(containerEl)
-			.setName(t("sSaveFolder"))
-			.setDesc(t("sSaveFolderDesc"))
-			.addText((text) => {
-				text.setPlaceholder("骰子结果").setValue(this.plugin.settings.saveFolder);
-				new FolderSuggest(this.app, text.inputEl, (picked) => {
-					this.plugin.settings.saveFolder = picked || DEFAULT_SETTINGS.saveFolder;
-					text.setValue(picked);
-					void this.plugin.saveSettings();
-				});
-				text.onChange(async (v) => {
-					this.plugin.settings.saveFolder = v.trim() || DEFAULT_SETTINGS.saveFolder;
-					await this.plugin.saveSettings();
-				});
-			});
-
-		new Setting(containerEl)
-			.setName(t("sNameTemplate"))
-			.setDesc(t("sNameTemplateDesc"))
-			.addText((text) =>
-				text
-					.setPlaceholder("{H1}_{YYYYMMDD-HHmm}")
-					.setValue(this.plugin.settings.nameTemplate)
-					.onChange(async (v) => {
-						this.plugin.settings.nameTemplate = v.trim() || DEFAULT_SETTINGS.nameTemplate;
-						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName(t("sSaveFormat"))
-			.setDesc(t("sSaveFormatDesc"))
-			.addDropdown((drop) => {
-				drop.addOption("markdown", t("optMarkdown"))
-					.addOption("png", t("optPng"))
-					.addOption("jpg", t("optJpg"));
-				// 互锁：追加模式下图片格式不可选（追加仅支持 Markdown）
-				if (this.plugin.settings.saveMode === "append") {
-					for (const opt of Array.from(drop.selectEl.options)) {
-						if (opt.value !== "markdown") opt.disabled = true;
-					}
-				}
-				drop.setValue(this.plugin.settings.saveFormat).onChange(async (v) => {
-					this.plugin.settings.saveFormat = v as DiceTableSettings["saveFormat"];
-					// 互锁纠正：切到图片格式时，把保存方式自动纠正回「新文件」（追加仅支持 Markdown）
-					if (this.plugin.settings.saveFormat !== "markdown" && this.plugin.settings.saveMode === "append") {
-						this.plugin.settings.saveMode = "newfile";
-					}
-					await this.plugin.saveSettings();
-					// 重渲染设置页，让保存方式下拉的灰显状态即时更新
-					this.display();
-				});
-			});
-
-		new Setting(containerEl)
-			.setName(t("sSaveMode"))
-			.setDesc(t("sSaveModeDesc"))
-			.addDropdown((drop) => {
-				drop.addOption("newfile", t("optNewFile")).addOption("append", t("optAppend"));
-				// 互锁：图片格式下追加模式不可选（追加仅支持 Markdown）
-				if (this.plugin.settings.saveFormat !== "markdown") {
-					for (const opt of Array.from(drop.selectEl.options)) {
-						if (opt.value === "append") opt.disabled = true;
-					}
-				}
-				drop.setValue(this.plugin.settings.saveMode)
-					.onChange(async (v) => {
-						this.plugin.settings.saveMode = v as DiceTableSettings["saveMode"];
-						// 互锁纠正：切到追加模式时，把保存格式自动纠正回 Markdown（追加不支持图片）
-						if (this.plugin.settings.saveMode === "append" && this.plugin.settings.saveFormat !== "markdown") {
-							this.plugin.settings.saveFormat = "markdown";
-						}
-						await this.plugin.saveSettings();
-						// 重渲染设置页，让保存格式下拉的灰显状态即时更新
-						this.display();
-					});
-			});
-
-		new Setting(containerEl)
-			.setName(t("sAppendTemplate"))
-			.setDesc(t("sAppendTemplateDesc"))
-			.addText((text) =>
-				text
-					.setPlaceholder("{H1}")
-					.setValue(this.plugin.settings.appendFileTemplate)
-					.onChange(async (v) => {
-						this.plugin.settings.appendFileTemplate = v.trim() || DEFAULT_SETTINGS.appendFileTemplate;
-						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName(t("sOpenLocation"))
-			.setDesc(t("sOpenLocationDesc"))
-			.addDropdown((drop) =>
-				drop
-					.addOption("main", t("optMain"))
-					.addOption("sidebar", t("optSidebar"))
-					.setValue(this.plugin.settings.openLocation)
-					.onChange(async (v) => {
-						this.plugin.settings.openLocation = v as DiceTableSettings["openLocation"];
-						await this.plugin.saveSettings();
-					})
-			);
 	}
 }
 
