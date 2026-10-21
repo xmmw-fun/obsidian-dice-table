@@ -31,6 +31,7 @@ const context = await esbuild.context({
     ...builtinModules.filter((m) => !m.startsWith("_")),
   ],
   format: "cjs",
+  loader: { ".md": "text" },
   target: "es2018",
   logLevel: "info",
   sourcemap: prod ? false : "inline",

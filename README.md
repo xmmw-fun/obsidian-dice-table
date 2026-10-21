@@ -25,6 +25,7 @@ Any Markdown file that follows this shape is a dice table. Write 5 pools and you
 - **Image export** — set the save format to PNG or JPG and the result is rendered as a clean 2x result card. Colors follow your theme at export time (dark mode exports a dark card).
 - **Follows your theme** — the UI and the default card style use Obsidian's theme variables, so light/dark and custom themes just work.
 - **Open where you want** — the dice view can open in a main tab or in the sidebar (configurable in settings).
+- **Built-in user manual** — the full manual ships inside the plugin: open **Settings → Dice Table → User manual** and read it without leaving Obsidian (Chinese and English, following your Obsidian language).
 
 ## Installation
 
@@ -38,6 +39,8 @@ Any Markdown file that follows this shape is a dice table. Write 5 pools and you
 2. Set **Save folder** and, optionally, the **naming template** and **save format** (Markdown / PNG / JPG).
 3. Click the dice icon in the left ribbon. Pick a table, roll, re-roll single pools as you like.
 4. Happy with the result? Hit **Save** — the file (or image) lands in your save folder with your naming template.
+
+5. Need the full documentation? **Settings → Dice Table → User manual** opens the complete manual (table syntax, multi-select, weights, naming templates, saving, view and settings reference).
 
 ### Dice table example
 

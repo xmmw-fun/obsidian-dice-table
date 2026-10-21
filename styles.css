@@ -120,3 +120,20 @@
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
+
+/* 使用手册弹窗 */
+.dice-manual-modal .dice-manual-hint {
+	color: var(--text-muted);
+	margin-bottom: 8px;
+}
+
+.dice-manual-modal .dice-manual-body {
+	max-height: 65vh;
+	overflow-y: auto;
+	padding-right: 8px;
+}
+
+.dice-manual-modal .dice-manual-body h1 {
+	font-size: 1.4em;
+	margin-top: 0.6em;
+}

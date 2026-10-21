@@ -71,6 +71,10 @@ const zh = {
 	optAppend: "追加到同一文件",
 	sOpenLocation: "打开位置",
 	sOpenLocationDesc: "点左侧骰子图标时，操作界面开在哪里",
+	sManual: "使用说明",
+	sManualDesc: "点开查看完整的用户使用手册（骰表语法、多选、权重、保存设置等）",
+	sManualModalHint: "以下为插件内置的用户使用手册（当前版本）：",
+	sManualRenderFail: "手册渲染失败，请到插件仓库查看在线版本。",
 	// 主入口
 	ribbonTooltip: "骰表：打开操作界面",
 	commandOpen: "打开骰表操作界面",
@@ -126,6 +130,10 @@ const en: typeof zh = {
 	optAppend: "Append to one file",
 	sOpenLocation: "Open location",
 	sOpenLocationDesc: "Where the roller opens when clicking the ribbon icon",
+	sManual: "User manual",
+	sManualDesc: "Open the full user manual: table syntax, multi-select, weights, saving and more",
+	sManualModalHint: "The built-in user manual (current version):",
+	sManualRenderFail: "Failed to render the manual. Please check the plugin repository online.",
 	ribbonTooltip: "Dice Table: open the roller",
 	commandOpen: "Open dice table view",
 };

@@ -1,6 +1,7 @@
 import { App, PluginSettingTab, TFolder, SettingDefinitionItem } from "obsidian";
 import type DiceTablePlugin from "./main";
-import { t } from "./i18n";
+import { t, lang } from "./i18n";
+import { ManualModal } from "./manual-modal";
 
 export interface DiceTableSettings {
 	/** 骰表文件夹（库内相对路径） */
@@ -136,6 +137,14 @@ export class DiceTableSettingTab extends PluginSettingTab {
 					key: "openLocation",
 					options: { main: t("optMain"), sidebar: t("optSidebar") },
 					defaultValue: DEFAULT_SETTINGS.openLocation,
+				},
+			},
+			{
+				// 用户使用手册入口（声明式 Action 行，1.13+；手册打包在插件里，见 src/manual.ts）
+				name: t("sManual"),
+				desc: t("sManualDesc"),
+				action: () => {
+					new ManualModal(this.app, lang).open();
 				},
 			},
 		];
