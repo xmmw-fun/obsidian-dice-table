@@ -46,6 +46,14 @@ export default class DiceTablePlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 
+	/** 设置变更后通知所有打开中的界面重扫列表与索引（O1：换骰表路径免重载，阿麦 10-22） */
+	async refreshDiceViews(): Promise<void> {
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_DICE_TABLE)) {
+			const view = leaf.view;
+			if (view instanceof DiceTableView) await view.refreshAll();
+		}
+	}
+
 	/** 按 openLocation 设置打开操作界面；已开着的界面若位置与设置不符，自动挪过去 */
 	async activateView(): Promise<void> {
 		const { workspace } = this.app;

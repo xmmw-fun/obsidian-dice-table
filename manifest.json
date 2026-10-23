@@ -1,7 +1,7 @@
 {
   "id": "dice-table",
   "name": "Dice Table",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "minAppVersion": "1.13.0",
   "description": "Roll a random result set from Markdown dice tables and save it with one click. Engine and data are fully separated: H1 = dice name, H2 = pool, - = face.",
   "author": "XMMW",

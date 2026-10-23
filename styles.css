@@ -137,3 +137,21 @@
 	font-size: 1.4em;
 	margin-top: 0.6em;
 }
+
+/* 1.3 子池与多套实例 */
+.dice-result-row.dice-sub {
+	padding-left: 20px;
+}
+
+.dice-instance-group {
+	margin-top: 8px;
+	font-weight: 600;
+	color: var(--text-normal);
+}
+
+.dice-instance-head {
+	margin-top: 6px;
+	padding-left: 12px;
+	font-weight: 500;
+	color: var(--text-muted);
+}

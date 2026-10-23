@@ -18,6 +18,14 @@ export interface DiceTableSettings {
 	appendFileTemplate: string;
 	/** 打开位置：主区新标签页 / 右侧栏 */
 	openLocation: "main" | "sidebar";
+	/** 多套实例的保存格式：grouped＝分组（默认）／blocks＝每实例独立块 */
+	multiSaveMode: "grouped" | "blocks";
+	/** 写入当前笔记的位置：cursor＝光标所在段落之后（默认）／append＝文末追加 */
+	noteWriteMode: "cursor" | "append";
+	/** 链式引用拼接：包裹符号 */
+	chainWrap: "paren" | "bracket" | "none";
+	/** 链式引用拼接：分隔符号（预设 colon/dash/none，或自定义字符串） */
+	chainSep: string;
 }
 
 export const DEFAULT_SETTINGS: DiceTableSettings = {
@@ -28,6 +36,10 @@ export const DEFAULT_SETTINGS: DiceTableSettings = {
 	saveMode: "newfile",
 	appendFileTemplate: "{H1}",
 	openLocation: "main",
+	multiSaveMode: "grouped",
+	noteWriteMode: "cursor",
+	chainWrap: "paren",
+	chainSep: "colon",
 };
 
 export class DiceTableSettingTab extends PluginSettingTab {
@@ -52,7 +64,14 @@ export class DiceTableSettingTab extends PluginSettingTab {
 			this.plugin.settings.saveMode = "newfile";
 		}
 		await this.plugin.saveSettings();
+		// O1（阿麦 10-22）：换骰表路径即时生效，免重载插件
+		if (key === "diceFolder") {
+			await this.plugin.refreshDiceViews();
+		}
 		if (key === "saveFormat" || key === "saveMode") this.update();
+		if (key === "multiSaveMode" || key === "noteWriteMode" || key === "chainWrap" || key === "chainSep") {
+			this.update();
+		}
 	}
 
 	/**
@@ -127,6 +146,46 @@ export class DiceTableSettingTab extends PluginSettingTab {
 					key: "appendFileTemplate",
 					placeholder: "{H1}",
 					defaultValue: DEFAULT_SETTINGS.appendFileTemplate,
+				},
+			},
+			{
+				name: t("sMultiSave"),
+				desc: t("sMultiSaveDesc"),
+				control: {
+					type: "dropdown",
+					key: "multiSaveMode",
+					options: { grouped: t("optGrouped"), blocks: t("optBlocks") },
+					defaultValue: DEFAULT_SETTINGS.multiSaveMode,
+				},
+			},
+			{
+				name: t("sNoteWrite"),
+				desc: t("sNoteWriteDesc"),
+				control: {
+					type: "dropdown",
+					key: "noteWriteMode",
+					options: { cursor: t("optCursor"), append: t("optAppendEnd") },
+					defaultValue: DEFAULT_SETTINGS.noteWriteMode,
+				},
+			},
+			{
+				name: t("sChainWrap"),
+				desc: t("sChainWrapDesc"),
+				control: {
+					type: "dropdown",
+					key: "chainWrap",
+					options: { paren: t("optParen"), bracket: t("optBracket"), none: t("optNoWrap") },
+					defaultValue: DEFAULT_SETTINGS.chainWrap,
+				},
+			},
+			{
+				name: t("sChainSep"),
+				desc: t("sChainSepDesc"),
+				control: {
+					type: "dropdown",
+					key: "chainSep",
+					options: { colon: t("optColon"), dash: t("optDash"), none: t("optNoSep") },
+					defaultValue: DEFAULT_SETTINGS.chainSep,
 				},
 			},
 			{
