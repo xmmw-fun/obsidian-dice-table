@@ -1,7 +1,7 @@
 import { ItemView, Notice, WorkspaceLeaf, TFolder, TFile, MarkdownView } from "obsidian";
 import type DiceTablePlugin from "./main";
-import { parseTable, collectRefTargets, Dice, Pool } from "./table";
-import { rollPoolFull, rollDiceFull, RefResolver, ResultItem, ChainFormat, defaultResolvePool } from "./result";
+import { parseTable, collectRefTargets, Dice, Pool, linkCandidates, extractLinkPath } from "./table";
+import { rollPoolFull, rollDiceFull, RefResolver, ResultItem, ChainFormat, defaultResolvePool, HistoryEntry } from "./result";
 import { renderNameTemplate, resolveUniquePath, sanitizeFilename } from "./save";
 import { renderResultCard } from "./image-export";
 import { ensureFolder } from "./settings";
@@ -16,18 +16,6 @@ function splitTarget(target: string): { path: string | null; name: string | null
 	const name = hash === -1 ? null : target.slice(hash + 1);
 	const isPath = pathPart.includes("/") || pathPart.endsWith(".md");
 	return { path: isPath ? pathPart : null, name };
-}
-
-/** 取库内相对路径的目录部分（用于「同文件夹优先」判定） */
-function dirOf(p: string): string {
-	return p.split("/").slice(0, -1).join("/");
-}
-
-/** 历史记录条目（会话内存，最多 20 组） */
-interface HistoryEntry {
-	diceTitle: string;
-	items: ResultItem[];
-	time: Date;
 }
 
 /** 库内全部骰表的索引（池引用/链式引用用；按文件路径缓存） */
@@ -49,8 +37,11 @@ export class DiceTableView extends ItemView {
 	private diceSources: DiceSource[] = [];
 	// 摇出的一组结果
 	private lastResult: ResultItem[] | null = null;
-	// 摇骰历史（会话内存，重启即清空）
+	// 摇骰历史（持久化：阿麦 2026-10-23 补——直接挂 settings.history 引用，push/shift 后防抖落盘，重启 Obsidian 后仍在）
 	private history: HistoryEntry[] = [];
+
+	// 历史落盘防抖计时器
+	private historySaveTimer: number | null = null;
 
 	// 库内文件变化后延迟刷新（防抖）
 	private refreshTimer: number | null = null;
@@ -87,13 +78,28 @@ export class DiceTableView extends ItemView {
 		}));
 
 		await this.refreshTableList();
+		// 历史持久化（阿麦 2026-10-23）：直接挂 settings.history 引用——增删即改设置对象，防抖落盘
+		this.history = this.plugin.settings.history;
 		this.render();
 	}
 
 	onClose(): Promise<void> {
 		if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
+		if (this.historySaveTimer !== null) {
+			window.clearTimeout(this.historySaveTimer);
+			void this.plugin.saveSettings(); // 关闭前把未落盘的历史补写
+		}
 		this.contentEl.empty();
 		return Promise.resolve();
+	}
+
+	/** 历史变更后防抖落盘（连续摇骰只写最后一次，避免狂点卡顿） */
+	private scheduleHistorySave(): void {
+		if (this.historySaveTimer !== null) window.clearTimeout(this.historySaveTimer);
+		this.historySaveTimer = window.setTimeout(() => {
+			this.historySaveTimer = null;
+			void this.plugin.saveSettings();
+		}, 300);
 	}
 
 	/** 文件变化防抖刷新，尽量保留当前选择 */
@@ -193,28 +199,33 @@ export class DiceTableView extends ItemView {
 		}
 		// 增量：把 [[ ]] 双链指向骰表文件夹之外的文件也读进索引（阿麦 10-22，#11b；
 		// 被引文件自己的引用再展开一轮，深度上限 5 防意外递归）
-		const loaded = new Set(sources.map((s) => s.path));
-		const locate = (p: string): TFile | null => {
-			const withExt = p.endsWith(".md") ? p : `${p}.md`;
+	const loaded = new Set(sources.map((s) => s.path));
+	// 定位被引文件（阿麦 2026-10-23 重修）：一个链接文本三种语义（vault 绝对/当前目录相对/纯名），
+	// 按 linkCandidates 候选顺序逐个试，最后走 Obsidian 自己的链接解析兜底
+	const locate = (p: string, basePath: string | null): TFile | null => {
+		for (const c of linkCandidates(p, basePath)) {
+			const withExt = c.endsWith(".md") ? c : `${c}.md`;
 			const direct = this.app.vault.getAbstractFileByPath(withExt);
 			if (direct instanceof TFile) return direct;
-			const byLink = this.app.metadataCache.getFirstLinkpathDest(p, "");
-			return byLink instanceof TFile ? byLink : null;
-		};
+		}
+		const byLink = this.app.metadataCache.getFirstLinkpathDest(p, basePath ?? "");
+		return byLink instanceof TFile ? byLink : null;
+	};
 		for (let round = 0; round < 5; round++) {
 			const pending = new Set<string>();
 			for (const src of sources) {
 				for (const ref of src.dice.flatMap((d) => collectRefTargets(d))) {
-					// 双链形式 [[X#名]]：取括号内 # 前部分；否则路径形式（含 / 或 .md）；裸名跳过（只在骰表文件夹内匹配）
-					const link = /^\[\[(?<inner>.+)\]\]$/.exec(ref.trim());
-					let filePart: string | null = null;
-					if (link?.groups) filePart = link.groups.inner.trim().split("#")[0];
-					else {
-						const { path } = splitTarget(ref);
-						filePart = path;
-					}
+				// 双链 [[X#名]] 取括号内 # 前部分（先剥「|别名」）；md 链接 [text](path) 取 path（阿麦 10-23）；
+				// 否则路径形式（含 / 或 .md）；裸名跳过（只在骰表文件夹内匹配）
+				const wiki = /^\[\[(?<inner>.+)\]\]$/.exec(ref.trim());
+				let filePart: string | null = null;
+				if (wiki?.groups) filePart = wiki.groups.inner.trim().split("|")[0].trim().split("#")[0];
+				else {
+					const mdPath = extractLinkPath(ref);
+					filePart = mdPath === null ? splitTarget(ref).path : mdPath.split("#")[0];
+				}
 					if (!filePart) continue;
-					const file = locate(filePart);
+					const file = locate(filePart, src.path);
 					if (file && !loaded.has(file.path)) {
 						pending.add(file.path);
 						loaded.add(file.path);
@@ -237,46 +248,47 @@ export class DiceTableView extends ItemView {
 	}
 
 /**
- * 构造引用解析器（阿麦 2026-10-22 二次修订）：
- * - **双链目标 `[[文件夹/文件#骰子名]]`（含不带文件夹的 `[[种族库]]`）→ 一律按 Obsidian 链接解析**
- *   （`getFirstLinkpathDest` 全库定位），指哪打哪——不搞重名检测、不提示（阿麦：「直接就是指向双链」）；
- * - 裸名目标（老写法 `-> 种族库`）→ 在骰表文件夹范围内按「当前文件＞同文件夹＞其它（字典序）」静默查找；
+ * 构造引用解析器（阿麦 2026-10-22 定、2026-10-23 20:47 修订钉死）：
+ * - **裸名目标（`-> 种族库`，不带任何链接/路径/文件名标记）→ 仅限当前文档内的 H1 骰子/池**；
+ *   跨文档一律用 `[[ ]]` 双链 / `[]()` md 链接 / `文件#名` 显式形式——绝不再静默跨文档查找；
+ * - 双链 `[[X#名]]`（含 `|别名`）/ md 链接 `[显示](路径#锚点)` → 按链接定位（三种语义候选＋Obsidian 兜底）；
  * - 路径形式目标（`-> 文件夹/文件#名`，不带方括号）→ 按库内路径精确定位。
  */
 private makeResolver(): RefResolver {
 	const sources = this.diceSources;
 	const curPath = this.currentFile;
 
-	// 解析顺序：当前文件置顶，其余按「同文件夹优先、再字典序」排
-	const ordered = [...sources].sort((a, b) => {
-		if (a.path === curPath) return -1;
-		if (b.path === curPath) return 1;
-		const fa = curPath && dirOf(a.path) === dirOf(curPath) ? 0 : 1;
-		const fb = curPath && dirOf(b.path) === dirOf(curPath) ? 0 : 1;
-		return fa - fb || a.path.localeCompare(b.path);
-	});
-
-	/** 按路径/链接文本定位库内 .md 文件（同步 API；链接文本走 getFirstLinkpathDest 全库搜） */
+	/** 按链接文本定位库内 .md 文件（阿麦 2026-10-23 重修：三种语义候选依次试，Obsidian 链接解析兜底） */
 	const locateFile = (pathOrName: string): TFile | null => {
-		const withExt = pathOrName.endsWith(".md") ? pathOrName : `${pathOrName}.md`;
-		const direct = this.app.vault.getAbstractFileByPath(withExt);
-		if (direct instanceof TFile) return direct;
+		for (const c of linkCandidates(pathOrName, curPath)) {
+			const withExt = c.endsWith(".md") ? c : `${c}.md`;
+			const direct = this.app.vault.getAbstractFileByPath(withExt);
+			if (direct instanceof TFile) return direct;
+		}
 		const byLink = this.app.metadataCache.getFirstLinkpathDest(pathOrName, curPath ?? "");
 		return byLink instanceof TFile ? byLink : null;
 	};
 
-	/** 双链目标 `[[X#名]]`：拆出文件部分与 #名；X 一律按链接文本/路径定位 */
+	/** 双链目标 `[[X#名]]`：拆出文件部分与 #名；先剥「|别名」尾巴（阿麦 10-23 实测：Obsidian 自动补全带别名） */
 	const parseLink = (target: string): { filePart: string; name: string | null } | null => {
 		const m = /^\[\[(?<inner>.+)\]\]$/.exec(target.trim());
 		if (!m?.groups) return null;
-		const inner = m.groups.inner.trim();
+		const inner = m.groups.inner.trim().split("|")[0].trim();
 		const hash = inner.indexOf("#");
 		return { filePart: hash === -1 ? inner : inner.slice(0, hash), name: hash === -1 ? null : inner.slice(hash + 1) };
 	};
 
+	/** md 链接目标 `[显示](路径[#锚点])`：拆出文件部分与 #名（阿麦 10-23，#11-c；路径已 URL 解码） */
+	const parseMdLink = (target: string): { filePart: string; name: string | null } | null => {
+		const p = extractLinkPath(target);
+		if (p === null) return null;
+		const hash = p.indexOf("#");
+		return { filePart: hash === -1 ? p : p.slice(0, hash), name: hash === -1 ? null : p.slice(hash + 1) };
+	};
+
 	const findDice = (target: string): Dice | null => {
-		// 双链形式：定位文件后在文件内找（不带 #名则找同名 H1、再退第一个）
-		const link = parseLink(target);
+		// 双链 [[...]] 或 md 链接 [...](...) 形式：定位文件后在文件内找（不带 #名则找同名 H1、再退第一个）
+		const link = parseLink(target) ?? parseMdLink(target);
 		if (link) {
 			const file = locateFile(link.filePart);
 			const src = file ? sources.find((s) => s.path === file.path) : undefined;
@@ -295,17 +307,14 @@ private makeResolver(): RefResolver {
 			const linkText = path.split("/").pop()!;
 			return src.dice.find((d) => d.title === linkText) ?? src.dice[0] ?? null;
 		}
-		// 裸名（老写法）：按序静默查找（阿麦 10-22：不做重名检测/提示，要精确就用双链）
-		const diceName = name ?? target;
-		for (const src of ordered) {
-			const d = src.dice.find((x) => x.title === diceName);
-			if (d) return d;
-		}
-		return null;
+		// 裸名（老写法）：**仅限当前文档内的 H1**（阿麦 10-22 定「O3 去掉」、10-23 20:47 暴怒纠正：
+		// 裸名绝不跨文档——跨文档一律用 [[ ]] / []() 链接形式；此前实现成静默跨文档按序查找是执行偏差）
+		const cur = sources.find((s) => s.path === curPath);
+		return cur?.dice.find((x) => x.title === (name ?? target)) ?? null;
 	};
 	const findPool = (target: string): Pool | null => {
-		// 双链/路径形式：定位文件后按池名找（不带池名的由 findDice 合成处理）
-		const link = parseLink(target);
+		// 双链/md 链接/路径形式：定位文件后按池名找（不带池名的由 findDice 合成处理）
+		const link = parseLink(target) ?? parseMdLink(target);
 		const { path, name } = splitTarget(link ? link.filePart + (link.name ? `#${link.name}` : "") : target);
 		const filePart = link ? link.filePart : path;
 		if (filePart) {
@@ -322,14 +331,20 @@ private makeResolver(): RefResolver {
 			if (!src) return null;
 			return src.dice.flatMap((d) => d.pools).find((x) => x.title === name) ?? null;
 		}
-		// 纯裸名池：按序静默查找
-		for (const src of ordered) {
-			const p = src.dice.flatMap((d) => d.pools).find((x) => x.title === target);
-			if (p) return p;
-		}
-		return null;
+		// 纯裸名池：**仅限当前文档**（同 findDice 口径——阿麦 10-23 20:47：裸名不跨文档）
+		const cur = sources.find((s) => s.path === curPath);
+		return cur?.dice.flatMap((d) => d.pools).find((x) => x.title === target) ?? null;
 	};
-	return { resolveDice: findDice, resolvePool: (t) => defaultResolvePool(t, findPool, findDice) };
+	// 解析失败收集（阿麦 10-23：摇完统一提示，避免用户不知道引用没生效）
+	const missed: string[] = [];
+	return {
+		resolveDice: findDice,
+		resolvePool: (t) => defaultResolvePool(t, findPool, findDice),
+		onMiss: (target) => {
+			if (!missed.includes(target)) missed.push(target);
+		},
+		missed,
+	};
 }
 
 	/** 当前链式拼接格式（用户设置项） */
@@ -522,9 +537,18 @@ private makeResolver(): RefResolver {
 		const resolver = this.makeResolver();
 		const fmt = this.chainFormat();
 		this.lastResult = rollDiceFull(this.currentDice, resolver, fmt);
+		this.noteMissed(resolver);
 		this.history.push({ diceTitle: this.currentDice.title, items: this.lastResult, time: new Date() });
 		if (this.history.length > 20) this.history.shift();
+		this.scheduleHistorySave();
 		this.render();
+	}
+
+	/** 摇骰后有引用没解析到时提示（阿麦 10-23：写错链接要让人知道，别静默出空结果） */
+	private noteMissed(resolver: RefResolver): void {
+		const missed = resolver.missed;
+		if (!missed || missed.length === 0) return;
+		new Notice(`${t("refMissNotice")}\n${missed.map((m) => `· ${m}`).join("\n")}`, 8000);
 	}
 
 	/** 单项单独重摇：只重摇该项（含其子池与实例整组重摇），其余项不动 */

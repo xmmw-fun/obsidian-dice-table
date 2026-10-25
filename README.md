@@ -20,10 +20,13 @@ Any Markdown file that follows this shape is a dice table. Write 5 pools and you
 - **Re-roll a single pool** — each result row has a small re-roll button that re-rolls only that pool.
 - **Multi-select pools** — write `## Loot ×3` to roll 3 non-repeating entries from one pool. Also accepts `*3`, `x3`, `X3`. Append `重复`, `repeat` or `r` (no space) to allow repeats, e.g. `## Loot ×3repeat`.
 - **Weights** — `- Rare sword ^5` makes a face five times as likely (weights 1:5:10 land on 6.25% / 31.25% / 62.5%).
-- **References & nesting** — `## Character ×3 -> Attributes` rolls N characters from one attribute definition (define once, reuse everywhere); `- Magic item -> Rarity` keeps rolling after a hit. Targets can be plain names or Obsidian links `[[folder/file#dice]]` — links reach tables outside the dice folder. Same-name targets are reported with a notice, never silently guessed.
-- **Random subset of pools** — write `# Scene card ×3池` on the H1 line and each roll draws 3 random pools (append `重复`/`repeat` to allow the same pool twice).
+- **References & nesting** — `## Character ×3 -> Attributes` rolls N characters from one attribute definition (define once, reuse everywhere); `- Magic item -> Rarity` keeps rolling after a hit. Cross-document targets use Obsidian links: wiki links `[[folder/file#dice]]` (shortest / vault / relative paths) and Markdown links `[text](folder/file.md)` both work; a plain name (no brackets) is looked up **in the current document only** — cross-document references always use link forms. Unresolved references are reported with a notice, never silently ignored.
+- **Random subset of pools** — write `# Scene card ×3` on the H1 line and each roll draws 3 random pools (append `重复`/`repeat` to allow the same pool twice).
+- **Random number pools** — `## Strength 1~100` rolls a random integer (endpoints included); `## Weight 0.1~9.9 小数2位` rolls decimals; `## Luck ×5 1~100` rolls 5 at once (no repeats by default — add `重复`/`repeat` to allow them). Negative ranges work: `-10~10`.
+- **Persisted roll history** — the last 20 rolls survive restarting Obsidian and can be loaded back into the result area.
+- **Open the table file** — a button next to the table picker opens the current table's Markdown file for quick edits.
 - **Multiple dice per file** — a file may contain several H1 dice; pick one from a dropdown.
-- **Auto-refresh** — new, renamed or deleted table files in the dice folder are picked up automatically, no reload needed.
+- **Auto-refresh** — new, renamed or deleted table files in the dice folder are picked up automatically, and changing the dice folder itself takes effect without reloading the plugin.
 - **Save with one click** — results are saved using your own naming template, e.g. `{H1}_{YYYYMMDD-HHmm}`. Variables: `{H1}`, `{H2}`, `{H2:2}`, `{YYYY}`, `{MM}`, `{DD}`, `{HH}`, `{mm}`, `{ss}`, `{WW}` and combos like `{YYYYMMDD-HHmm}`. Illegal filename characters are replaced automatically; name collisions get a numeric suffix.
 - **Image export** — set the save format to PNG or JPG and the result is rendered as a clean 2x result card. Colors follow your theme at export time (dark mode exports a dark card).
 - **Follows your theme** — the UI and the default card style use Obsidian's theme variables, so light/dark and custom themes just work.
@@ -65,7 +68,7 @@ None. Dice Table makes no network requests and collects no data.
 
 ## 中文说明
 
-**骰表（Dice Table）** 是一个 Obsidian 随机结果插件：把骰表写成普通 Markdown 笔记（H1＝骰子名，H2＝要摇的项，横杠条目＝可摇的面），插件从每个项里随机抽一条组成一组结果，满意就一键保存为笔记或导出 PNG/JPG 图片。引擎与数据彻底分离：插件不认识任何具体骰表，只认 H1/H2/横杠结构；表里有几个 H2 就摇几项。支持单项重摇、`×N` 多选（`## 战利品 ×3`，默认不重复，`×3重复`/`×3repeat` 允许重复）、面权重 `^N`（`- 稀有剑 ^5`）、嵌套与引用（`## 角色 ×3 -> 属性集` 属性集单点定义、改一处全局生效；`[[文件夹/文件#骰子名]]` 双链精确跨文件引用；裸名撞名不猜、提示引导精确指定）、随机子集池（`# 场景卡 ×3池` 每摇随机 3 个池，`×3池重复` 可重复）、一个文件多个骰子、自定义命名模板（如 `{H1}_{YYYYMMDD-HHmm}`）、导出图片时自动固化当前主题色。插件不发起任何网络请求。
+**骰表（Dice Table）** 是一个 Obsidian 随机结果插件：把骰表写成普通 Markdown 笔记（H1＝骰子名，H2＝要摇的项，横杠条目＝可摇的面），插件从每个项里随机抽一条组成一组结果，满意就一键保存为笔记或导出 PNG/JPG 图片。引擎与数据彻底分离：插件不认识任何具体骰表，只认 H1/H2/横杠结构；表里有几个 H2 就摇几项。支持单项重摇、`×N` 多选（`## 战利品 ×3`，默认不重复，`×3重复`/`×3repeat` 允许重复）、面权重 `^N`（`- 稀有剑 ^5`）、嵌套与引用（`## 角色 ×3 -> 属性集` 属性集单点定义、改一处全局生效；跨文档用链接语法：`[[文件夹/文件#骰子名]]` 双链（最短链/库内路径/绝对/相对）或 `[显示](文件夹/文件.md)` Markdown 链接；裸名只在当前文档内查找，引用不上会提示）、随机子集池（`# 场景卡 ×3` 每摇随机 3 个池，`×3重复` 可重复）、随机数字池（`## 力量 1~100` 整数、`## 体重 0.1~9.9 小数2位` 小数、`## 幸运 ×5 1~100` 一次摇 5 个且默认不重复）、摇骰历史持久化（最近 20 组重启后仍在）、选表行一键打开当前骰表文件、一个文件多个骰子、自定义命名模板（如 `{H1}_{YYYYMMDD-HHmm}`）、导出图片时自动固化当前主题色。插件不发起任何网络请求。
 
 ## License
 

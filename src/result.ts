@@ -7,7 +7,7 @@
 //
 // 结果层级：ResultItem（一个池的结果）→ subResults（子池）→ instances（多套实例）
 
-import { Dice, Face, Pool, rollPoolValues } from "./table";
+import { Dice, Face, Pool, rollPoolValues, rollNumberRange } from "./table";
 
 /** 一个池摇出的结果 */
 export interface ResultItem {
@@ -27,12 +27,26 @@ export interface ResultInstance {
 	items: ResultItem[];
 }
 
+/** 摇骰历史条目（阿麦 2026-10-23：从会话内存升级为持久化——存 data.json，重启 Obsidian 后仍在） */
+export interface HistoryEntry {
+	/** 骰子名（载入时切回它的文件与骰子用） */
+	diceTitle: string;
+	/** 该次摇出的结果（含池结构，载入后可直接重摇/保存） */
+	items: ResultItem[];
+	/** 摇骰时间（JSON 序列化时为字符串，载入时规范化为 Date） */
+	time: Date;
+}
+
 /** 引用解析所需的库访问能力（由 view 层注入，避免引擎依赖 Obsidian） */
 export interface RefResolver {
 	/** 按目标名找骰子：目标形如「属性集」「文件名#骰子名」或双链「[[文件夹/文件#骰子名]]」 */
 	resolveDice(target: string): Dice | null;
 	/** 按目标名找池：目标形如「稀有度」「文件名#池名」；找不到则回退为找同名骰子的全部池 */
 	resolvePool(target: string): Pool | null;
+	/** 引用目标没找到时回调（阿麦 10-23：解析失败要给提示，否则用户不知道引用没生效） */
+	onMiss?: (target: string) => void;
+	/** 本次摇骰收集到的未命中目标（view 层摇完读它弹提示；随 makeResolver 每次重建） */
+	missed?: string[];
 }
 
 /**
@@ -46,7 +60,7 @@ export function defaultResolvePool(target: string, findPool: (t: string) => Pool
 	if (!dice) return null;
 	const faces: Face[] = [];
 	for (const p of dice.pools) faces.push(...p.faces);
-	return { title: dice.title, faces, count: 1, allowRepeat: false, subPools: [], ref: null };
+	return { title: dice.title, faces, count: 1, allowRepeat: false, subPools: [], ref: null, numberRange: null };
 }
 
 /** 链式引用的最大递归深度（防死循环，阿麦 12:42 定 5） */
@@ -90,8 +104,19 @@ export function rollPoolFull(pool: Pool, resolver: RefResolver, chainFmt: ChainF
 			const nested = rollPoolFull(targetPool, resolver, chainFmt, depth + 1);
 			return { pool, values: nested.values.length > 0 ? nested.values : [flattenItem(nested)], subResults: nested.subResults, instances: nested.instances };
 		}
-		// 找不到目标：当作普通池
+		// 找不到目标：当作普通池；记一次 miss（view 层统一提示，阿麦 10-23）
+		resolver.onMiss?.(pool.ref);
 		return { pool, values: rollPoolValues(pool), subResults: [], instances: [] };
+	}
+
+	// 数字池（阿麦 2026-10-23，#10）：`## 池 1~100`——直接摇数字，不走面；×N 不重复/重复照常
+	if (pool.numberRange) {
+		return {
+			pool,
+			values: rollNumberRange(pool.numberRange, Math.max(1, pool.count), pool.allowRepeat),
+			subResults: [],
+			instances: [],
+		};
 	}
 
 	// 链式引用只在面命中时解析；先摇面（带原池的 count/allowRepeat——1.3.0 曾用 dummyPool 丢失 ×N，阿麦 10-22 实测抓出）

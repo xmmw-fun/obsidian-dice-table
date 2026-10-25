@@ -40,6 +40,12 @@ export default class DiceTablePlugin extends Plugin {
 			this.settings.saveFormat = "markdown";
 			void this.saveSettings();
 		}
+		// 历史持久化（阿麦 2026-10-23）：JSON 里 time 是字符串，载入时规范化为 Date；旧数据无此字段时兜底空数组
+		if (!Array.isArray(this.settings.history)) {
+			this.settings.history = [];
+		} else {
+			this.settings.history = this.settings.history.map((e) => ({ ...e, time: new Date(e.time) }));
+		}
 	}
 
 	async saveSettings(): Promise<void> {

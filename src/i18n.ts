@@ -41,6 +41,7 @@ const zh = {
 	// 提示
 	noDiceNotice: "没有可摇的骰子，请先在骰表文件夹放一份格式正确的 .md",
 	openFailNotice: "无法打开骰表界面",
+	refMissNotice: "以下引用没有解析到（裸名只查当前文档；跨文档请用 [[文件]] 或 [显示](文件.md) 链接形式）：",
 	savedNotice: "已保存：{path}",
 	copiedNotice: "结果已复制到剪贴板",
 	rolledAtLabel: "摇出时间",
@@ -126,6 +127,7 @@ const en: typeof zh = {
 	historyLoadAria: "Load this result set back into the result area",
 	noDiceNotice: "No dice to roll. Put a properly formatted .md into the tables folder first.",
 	openFailNotice: "Cannot open the dice table view",
+	refMissNotice: "These references could not be resolved (a bare name is looked up in the current document only; to reference another document use [[file]] or [text](file.md)):",
 	savedNotice: "Saved: {path}",
 	copiedNotice: "Result copied to clipboard",
 	rolledAtLabel: "Rolled at",

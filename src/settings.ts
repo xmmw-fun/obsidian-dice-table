@@ -2,6 +2,7 @@ import { App, PluginSettingTab, TFolder, SettingDefinitionItem } from "obsidian"
 import type DiceTablePlugin from "./main";
 import { t, lang } from "./i18n";
 import { ManualModal } from "./manual-modal";
+import type { HistoryEntry } from "./result";
 
 export interface DiceTableSettings {
 	/** 骰表文件夹（库内相对路径） */
@@ -26,6 +27,8 @@ export interface DiceTableSettings {
 	chainWrap: "paren" | "bracket" | "none";
 	/** 链式引用拼接：分隔符号（预设 colon/dash/none，或自定义字符串） */
 	chainSep: string;
+	/** 摇骰历史（持久化，阿麦 2026-10-23：最多 20 组，重启 Obsidian 后仍在） */
+	history: HistoryEntry[];
 }
 
 export const DEFAULT_SETTINGS: DiceTableSettings = {
@@ -40,6 +43,7 @@ export const DEFAULT_SETTINGS: DiceTableSettings = {
 	noteWriteMode: "cursor",
 	chainWrap: "paren",
 	chainSep: "colon",
+	history: [],
 };
 
 export class DiceTableSettingTab extends PluginSettingTab {

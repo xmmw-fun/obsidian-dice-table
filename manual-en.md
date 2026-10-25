@@ -1,7 +1,7 @@
 # Dice Table — Complete User Manual
 
-> Applies to: 1.3.0+ ｜ Plugin ID: `dice-table` ｜ Marketplace: https://community.obsidian.md/plugins/dice-table
-> Updated: 2026-10-22
+> Applies to: 1.4.0+ ｜ Plugin ID: `dice-table` ｜ Marketplace: https://community.obsidian.md/plugins/dice-table
+> Updated: 2026-10-25
 
 ---
 
@@ -71,7 +71,7 @@ Add `×N` to the end of an **H2 heading** to draw N results from that pool:
 
 **Re-rolling a multi-select pool:** the ↻ button next to a result re-rolls the **whole group** (all 3 entries change together), while other pools stay untouched.
 
-> Want "roll a random few pools each time" instead of "roll several faces from one pool"? That is a different marker (`×N池`, written on the H1 line) — see section 5.
+> Want "roll a random few pools each time" instead of "roll several faces from one pool"? That is a different marker (`×N`, written on the H1 line) — see section 5.
 
 ---
 
@@ -156,18 +156,60 @@ One roll draws one hair colour and one height; sub-pools are shown indented in t
 ### Hair color｜Black｜Blond｜Silver white
 ```
 
-### [[ ]] links: point at an exact file
+### Nesting as deep as you like: dice calling dice, layer after layer
 
-After `->` you can write a native Obsidian link, so references hit exactly what you mean:
+References are **recursive**: a referenced dice can itself contain pools that reference other dice — layer upon layer, up to 5 levels deep. The typical scenario (a CP generator):
+
+```markdown
+# CP generator
+
+## CP ×2 -> Character card     ← layer 1: roll 2 characters at once
+```
+
+```markdown
+# Character card
+
+## Hair -> Hair library#Color  ← layer 2: each trait rolls its own library
+## Personality -> Personality library#Trait
+## Skill -> Skill library#Ability
+```
+
+```markdown
+# Hair library
+
+## Color
+- Jet black
+- Platinum
+- Silver white
+```
+
+One roll of "CP generator" = 2 characters, each with hair, personality and skill drawn from their own libraries. **The character card is defined once** — the CP generator, a party generator, any table can `-> Character card` and reuse it; change it in one place and everything updates.
+
+Three reference shapes (what goes after `->`):
 
 | You write | Effect |
 |-----------|--------|
-| `## Race -> [[Race library]]` | References "Race library" anywhere in the vault (resolved by Obsidian's link engine — **not limited to the dice folder**) |
-| `## Race -> [[World/Race library]]` | Points at an exact folder |
-| `## Character -> [[Character card#Template]]` | Points at an exact dice inside an exact file |
-| `## Race -> Race library` | Plain text name: matched only inside the dice folder (legacy syntax, still works) |
+| `## Pool -> Character card` | References a **whole dice**: every pool of the target rolls once |
+| `## Hair -> Hair library#Color` | References a **single pool** inside the target |
+| `## CP ×2 -> Character card` | Rolls **N instances** at once, each expanding every pool of the target |
 
-**Which form to use**: `[[ ]]` links resolve exactly like links in your notes (Obsidian's own resolution rules), so they hit precisely what you mean — use them for cross-folder references. A plain name (`-> Race library`) is matched inside the dice folder only.
+**How to write a library (important)**: a library is just an ordinary table — `# Library name` + `## Pool name` + dash faces. **Faces cannot sit directly under an H1** (faces are only recognised under H2/H3 pool headings; faces directly under an H1 are ignored). Several dice referencing each other inside one file is perfectly fine (the sample `CP generator.md` crams 5 dice into one file, all cross-referencing); for cross-file references see the links section below.
+
+### [[ ]] wiki links and []() Markdown links: point at an exact file
+
+After `->` you can write a link, so references hit exactly what you mean. **All three Obsidian wiki-link forms are supported, and Markdown links `[]()` work too** (that is the form Obsidian uses when the wiki-link setting is off):
+
+| Form | You write | Notes |
+|------|-----------|-------|
+| Shortest | `## Race -> [[Race library]]` | File name only; Obsidian resolves it vault-wide |
+| Vault path | `## Race -> [[World/Race library]]` | Tried as a vault-root path first, then as a path relative to the current table's folder (Obsidian's relative form drops the `./`) |
+| Absolute | `## Race -> [[/World/Race library]]` | Leading slash; same as the vault-root path |
+| Relative | `## Race -> [[../Lib/Race library]]` | Relative to the current table file's folder (`..` up, `.` here) |
+| Markdown link | `## Race -> [Race library](World/Race library.md)` | `[text](path)` form; the same path rules apply (`../`, `#anchor`; spaces may be written as `%20`) |
+
+Add `#` to point at an exact dice or pool: `## Character -> [[Character card#Template]]`, `## Hair -> [[Hair library#Color]]`, `## Character -> [Character card](Character card.md#Template)`.
+
+**Division of labour with plain names**: link forms follow Obsidian's own resolution rules and can reach files in **other documents (including outside the dice folder)**; a plain name (`-> Race library`) is looked up **inside the current document only** — cross-document references always use link forms, never bare names (finalized by 阿麦 on 2026-10-23: if a bare name is not found the plugin says so, it never silently searches elsewhere).
 
 ---
 
@@ -186,7 +228,7 @@ Add `×N` to the end of the **H1 heading** and each roll of this dice **randomly
 | `# Scene card` (no marker) | Rolls every pool (default) |
 
 ```markdown
-# Scene card ×3池
+# Scene card ×3
 
 ## Time
 - Early morning
@@ -217,7 +259,39 @@ The first roll might produce "Era, Smell, Time", the next "Place, Sound, Smell" 
 
 ---
 
-## 6. File naming (template)
+## 6. Random numbers: roll a number directly
+
+(New in 1.4)
+
+A pool does not have to hold written-out entries — it can roll a **number** straight from a range. Put the range in the H2 heading:
+
+| You write | Effect |
+|-----------|--------|
+| `## Strength 1~100` | A random integer from 1 to 100 (1 and 100 included) |
+| `## Weight 0.1~9.9 小数2位` | A decimal with 2 places kept (e.g. 3.50) |
+| `## Luck ×5 1~100` | Rolls 5 at once, **all different** (default) |
+| `## Temperature ×3repeat -10~10` | Rolls 3 at once, duplicates allowed; negatives supported |
+
+Three rules:
+
+1. **Ranges use the tilde `~`** — the dash `-` already means "face" in this syntax, so it cannot double as a range separator; the tilde handles negatives naturally (`-10~10`);
+2. **Integers by default**; for decimals either write the bounds with decimal points (`1.00~9.00` → 2 places, `0.5~1.5` → 1 place) or state `小数N位` explicitly (the explicit marker wins);
+3. **"Roll N at once" reuses `×N`, without repeats by default** — add `r` / `repeat` / `重复` to allow duplicates (same rule as pool multi-select: one syntax to remember).
+
+Number pools save, write to notes, export as images, land in history and re-roll singly exactly like ordinary pools; every number in the range is equally likely, so `^N` weights mean nothing for a number pool (ignored if written).
+
+```markdown
+# Character stats
+
+## Strength 1~100
+## Weight 0.1~9.9 小数2位
+## Luck ×5 1~100
+## Temperature ×3repeat -10~10
+```
+
+---
+
+## 7. File naming (template)
 
 In Settings, the **file name template** works like this: text in braces is a variable, everything outside braces is literal text.
 
@@ -241,7 +315,7 @@ Handled automatically (nothing for you to do):
 
 ---
 
-## 7. Saving: format and mode
+## 8. Saving: format and mode
 
 | Setting | Options | Notes |
 |---------|---------|-------|
@@ -252,7 +326,7 @@ Handled automatically (nothing for you to do):
 
 ---
 
-## 8. Using the view
+## 9. Using the view
 
 - **Ribbon icon (🎲)**: opens the roller — in the main tab or the right sidebar, as configured; after changing that setting, clicking the icon moves the view for you.
 - **Two dropdowns at the top**: pick the table file, then the dice inside it (the second dropdown only appears for files with several dice).
@@ -261,24 +335,24 @@ Handled automatically (nothing for you to do):
 - **↻ next to a row**: re-rolls only that pool (a multi-select pool re-rolls as a whole group); other rows stay as they are.
 - **Copy result**: puts the result on your clipboard as text (`- Pool: result`).
 - **Save**: writes the result according to your format, mode and naming template.
-- **History (N)**: a collapsible area below the results keeping the last 20 rolls of this session; "Load" puts a roll back into the result area (loading a roll from another dice switches file and dice automatically). History lives in memory — restarting Obsidian clears it.
+- **History (N)**: a collapsible area below the results keeping the last 20 rolls; "Load" puts a roll back into the result area (loading a roll from another dice switches file and dice automatically). History is persisted — it survives restarting Obsidian.
 
 ---
 
-## 9. Settings at a glance (6 items)
+## 10. Settings at a glance (6 items)
 
 1. **Dice folder** — where your tables live (the field suggests existing folders as you type; a new path is created on first save; changes take effect immediately, no restart);
 2. **Default save folder** — where results are written (created automatically if missing, including nested paths);
-3. **File name template** — see section 6;
+3. **File name template** — see section 7;
 4. **Save format** — Markdown / PNG / JPG;
-5. **Save mode** — new file / append (locked against the format, see section 5);
+5. **Save mode** — new file / append (locked against the format, see section 8);
 6. **Open location** — main tab / right sidebar.
 
 The interface language **follows Obsidian automatically**: pick Simplified Chinese in Obsidian and the plugin speaks Chinese; any other language shows English. There is no manual language switch.
 
 ---
 
-## 10. A table that uses every syntax at once
+## 11. A table that uses every syntax at once
 
 ```markdown
 # Expedition
@@ -310,7 +384,7 @@ The interface language **follows Obsidian automatically**: pick Simplified Chine
 - **Bonuses ×2repeat** draws 2 results and the same bonus may appear twice;
 - **Environment** draws 1 ordinary result.
 
-And one with a **random subset of pools** (`×3池` on the H1 line, compact syntax inside):
+And one with a **random subset of pools** (`×3` on the H1 line, compact syntax inside):
 
 ```markdown
 # Scene card ×3
