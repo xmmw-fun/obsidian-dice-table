@@ -291,7 +291,43 @@ Number pools save, write to notes, export as images, land in history and re-roll
 
 ---
 
-## 7. File naming (template)
+## 7. Word banks & sentence templates: `{placeholders}`
+
+Write `{pool name}` inside a face and the plugin fills it with a random word from the same-named pool when you roll. **A word bank is nothing new — any ordinary pool is one.**
+
+```markdown
+# Sentence generator
+
+## Sentence
+- A {color} {gem} appears in the {place}
+- {name} picks up {name}'s sword
+
+## Color
+- red ^5
+- blue
+
+## Gem
+- agate
+- crystal
+```
+
+| You write | Behavior |
+|-----------|----------|
+| `{Color}` | Fills one word from the same-named pool **in this document**; weights `^N` apply |
+| `{[[File#Pool]]}`, `{[text](file.md#Pool)}` | Cross-document — same rules as `->` references (a `\|alias` is stripped) |
+| `{Strength}` (a number pool) | Fills a number from the range |
+| Same placeholder appears twice | Rolled **once per roll** — every occurrence gets the same word |
+| `{Colour}` (no such pool / empty pool) | Kept literally as `{Colour}`, plus a notice after the roll — typos are visible immediately |
+
+Three notes:
+
+- **Each instance rolls its own**: with `## CP ×2 -> Character`, the two characters roll their own words (they never share one name);
+- Placeholders **take the word only**: a `->` chain on a bank face is not triggered here (want rarity? write a separate `{Rarity}` placeholder);
+- A `{...}` inside a picked word is kept literally (no recursion).
+
+---
+
+## 8. File naming (template)
 
 In Settings, the **file name template** works like this: text in braces is a variable, everything outside braces is literal text.
 
@@ -315,7 +351,7 @@ Handled automatically (nothing for you to do):
 
 ---
 
-## 8. Saving: format and mode
+## 9. Saving: format and mode
 
 | Setting | Options | Notes |
 |---------|---------|-------|
@@ -326,33 +362,33 @@ Handled automatically (nothing for you to do):
 
 ---
 
-## 9. Using the view
+## 10. Using the view
 
 - **Ribbon icon (🎲)**: opens the roller — in the main tab or the right sidebar, as configured; after changing that setting, clicking the icon moves the view for you.
-- **Two dropdowns at the top**: pick the table file, then the dice inside it (the second dropdown only appears for files with several dice).
-- **📄 Open file** (new in 1.3.0): the button next to the table dropdown opens the current table's `.md` directly — tweak pools without hunting through your vault (an already-open tab is focused instead of duplicated, and the note you are editing is never overwritten).
-- **🎲 Roll**: rolls every pool once.
+- **Sticky toolbar** (new layout in 1.6.0): one row pinned to the top; however far you scroll, it stays put —
+  - **Dice icon**: rolls every pool once (no tooltip — it does what it says);
+  - **File-name dropdown**: switch to another table file in the same folder; a second "Dice" dropdown appears below when the file has several dice;
+  - **Open file** (tooltip on hover): opens the current table's `.md` directly — tweak pools without hunting through your vault (an already-open tab is focused instead of duplicated, and the note you are editing is never overwritten);
+  - **⋮ More actions**: a native menu keeps the less-frequent actions out of the way — **Save** (format, mode and naming template as configured), **Copy result** (to the clipboard as `- Pool: result`), **Write to note**, and **Change table folder** (a dialog with official folder suggestions; stays in sync with the settings tab — change it on either side and both update instantly);
 - **↻ next to a row**: re-rolls only that pool (a multi-select pool re-rolls as a whole group); other rows stay as they are.
-- **Copy result**: puts the result on your clipboard as text (`- Pool: result`).
-- **Save**: writes the result according to your format, mode and naming template.
 - **History (N)**: a collapsible area below the results keeping the last 20 rolls; "Load" puts a roll back into the result area (loading a roll from another dice switches file and dice automatically). History is persisted — it survives restarting Obsidian.
 
 ---
 
-## 10. Settings at a glance (6 items)
+## 11. Settings at a glance (6 items)
 
 1. **Dice folder** — where your tables live (the field suggests existing folders as you type; a new path is created on first save; changes take effect immediately, no restart);
 2. **Default save folder** — where results are written (created automatically if missing, including nested paths);
-3. **File name template** — see section 7;
+3. **File name template** — see section 8;
 4. **Save format** — Markdown / PNG / JPG;
-5. **Save mode** — new file / append (locked against the format, see section 8);
+5. **Save mode** — new file / append (locked against the format, see section 9);
 6. **Open location** — main tab / right sidebar.
 
 The interface language **follows Obsidian automatically**: pick Simplified Chinese in Obsidian and the plugin speaks Chinese; any other language shows English. There is no manual language switch.
 
 ---
 
-## 11. A table that uses every syntax at once
+## 12. A table that uses every syntax at once
 
 ```markdown
 # Expedition

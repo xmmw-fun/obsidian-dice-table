@@ -1,10 +1,11 @@
-import { ItemView, Notice, WorkspaceLeaf, TFolder, TFile, MarkdownView } from "obsidian";
+import { ItemView, Menu, Notice, WorkspaceLeaf, TFolder, TFile, MarkdownView, setIcon, setTooltip } from "obsidian";
 import type DiceTablePlugin from "./main";
 import { parseTable, collectRefTargets, Dice, Pool, linkCandidates, extractLinkPath } from "./table";
 import { rollPoolFull, rollDiceFull, RefResolver, ResultItem, ChainFormat, defaultResolvePool, HistoryEntry } from "./result";
 import { renderNameTemplate, resolveUniquePath, sanitizeFilename } from "./save";
 import { renderResultCard } from "./image-export";
 import { ensureFolder } from "./settings";
+import { FolderPathModal } from "./path-modal";
 import { t } from "./i18n";
 
 export const VIEW_TYPE_DICE_TABLE = "dice-table-view";
@@ -18,7 +19,7 @@ function splitTarget(target: string): { path: string | null; name: string | null
 	return { path: isPath ? pathPart : null, name };
 }
 
-/** 库内全部骰表的索引（池引用/链式引用用；按文件路径缓存） */
+/** 库内全部骰子的索引（池引用/链式引用用；按文件路径缓存） */
 interface DiceSource {
 	path: string;
 	dice: Dice[];
@@ -27,13 +28,13 @@ interface DiceSource {
 export class DiceTableView extends ItemView {
 	plugin: DiceTablePlugin;
 
-	// 当前选中的骰表文件、文件内的骰子列表与选中索引
+	// 当前选中的骰子文件、文件内的骰子列表与选中索引
 	private tableFiles: string[] = [];
 	private currentFile: string | null = null;
 	private diceList: Dice[] = [];
 	private diceIndex = 0;
 	private currentDice: Dice | null = null;
-	// 库内全部骰表索引（供池引用/链式引用跨文件解析；含当前文件）
+	// 库内全部骰子索引（供池引用/链式引用跨文件解析；含当前文件）
 	private diceSources: DiceSource[] = [];
 	// 摇出的一组结果
 	private lastResult: ResultItem[] | null = null;
@@ -64,13 +65,13 @@ export class DiceTableView extends ItemView {
 	}
 
 	async onOpen(): Promise<void> {
-		// 监听库内文件变化：新建/删除/改名骰表后自动刷新列表，无需重启插件；
+		// 监听库内文件变化：新建/删除/改名骰子后自动刷新列表，无需重启插件；
 		// 改内容也刷新（阿麦 10-22：改完 H1/池内容切回界面，马上用新解析——此前只听新建/删除/改名，改了没反应）
 		this.registerEvent(this.app.vault.on("create", () => this.scheduleRefresh()));
 		this.registerEvent(this.app.vault.on("delete", () => this.scheduleRefresh()));
 		this.registerEvent(this.app.vault.on("rename", () => this.scheduleRefresh()));
 		this.registerEvent(this.app.vault.on("modify", (file) => {
-			// 只盯骰表文件夹内的 .md 改动（写别的笔记保存不触发重扫）
+			// 只盯骰子文件夹内的 .md 改动（写别的笔记保存不触发重扫）
 			if (!(file instanceof TFile)) return;
 			const folder = this.plugin.settings.diceFolder.replace(/^\/+|\/+$/g, "");
 			if (folder && !file.path.startsWith(`${folder}/`)) return;
@@ -122,13 +123,13 @@ export class DiceTableView extends ItemView {
 		}, 500);
 	}
 
-	/** 设置变更（如更换骰表路径）后由 main 调用：重扫列表与索引并重渲染（O1，阿麦 10-22） */
+	/** 设置变更（如更换骰子路径）后由 main 调用：重扫列表与索引并重渲染（O1，阿麦 10-22） */
 	async refreshAll(): Promise<void> {
 		await this.refreshTableList();
 		this.render();
 	}
 
-	/** 扫描设置的骰表文件夹，列出所有 .md */
+	/** 扫描设置的骰子文件夹，列出所有 .md */
 	private async refreshTableList(prefer?: string | null): Promise<void> {
 		this.tableFiles = [];
 		const folder = this.plugin.settings.diceFolder;
@@ -170,8 +171,8 @@ export class DiceTableView extends ItemView {
 	}
 
 	/**
-	 * 刷新库内全部骰表索引（池引用/链式引用用）。
-	 * 只读骰表文件夹内的 .md；解析失败的文件跳过，不影响主流程。
+	 * 刷新库内全部骰子索引（池引用/链式引用用）。
+	 * 只读骰子文件夹内的 .md；解析失败的文件跳过，不影响主流程。
 	 */
 	private async refreshDiceIndex(): Promise<void> {
 		const folder = this.plugin.settings.diceFolder.replace(/^\/+|\/+$/g, "");
@@ -197,7 +198,7 @@ export class DiceTableView extends ItemView {
 				// 读取失败的文件跳过
 			}
 		}
-		// 增量：把 [[ ]] 双链指向骰表文件夹之外的文件也读进索引（阿麦 10-22，#11b；
+		// 增量：把 [[ ]] 双链指向骰子文件夹之外的文件也读进索引（阿麦 10-22，#11b；
 		// 被引文件自己的引用再展开一轮，深度上限 5 防意外递归）
 	const loaded = new Set(sources.map((s) => s.path));
 	// 定位被引文件（阿麦 2026-10-23 重修）：一个链接文本三种语义（vault 绝对/当前目录相对/纯名），
@@ -216,7 +217,7 @@ export class DiceTableView extends ItemView {
 			for (const src of sources) {
 				for (const ref of src.dice.flatMap((d) => collectRefTargets(d))) {
 				// 双链 [[X#名]] 取括号内 # 前部分（先剥「|别名」）；md 链接 [text](path) 取 path（阿麦 10-23）；
-				// 否则路径形式（含 / 或 .md）；裸名跳过（只在骰表文件夹内匹配）
+				// 否则路径形式（含 / 或 .md）；裸名跳过（只在骰子文件夹内匹配）
 				const wiki = /^\[\[(?<inner>.+)\]\]$/.exec(ref.trim());
 				let filePart: string | null = null;
 				if (wiki?.groups) filePart = wiki.groups.inner.trim().split("|")[0].trim().split("#")[0];
@@ -358,10 +359,17 @@ private makeResolver(): RefResolver {
 		root.empty();
 		root.addClass("dice-table-view");
 
-		// ── 选表行 ──
-		const pickRow = root.createDiv({ cls: "dice-pick-row" });
-		pickRow.createEl("label", { text: t("tableLabel"), cls: "dice-label" });
-		const select = pickRow.createEl("select", { cls: "dropdown" });
+		// ── 吸顶工具栏（1.6，阿麦 10-30 拍板）：摇骰 / 选表 / 打开文档 / 更多操作 ──
+		// 结果长时任何位置都能摇（痛点：旧版摇骰按钮在底部要拉到底）
+		const bar = root.createDiv({ cls: "dice-toolbar" });
+
+		// 摇骰：骰子图标＋主题重点色（1.6 微调，阿麦 10-30：太不明显）；不带悬停说明（用的人都懂）
+		const rollBtn = bar.createEl("button", { cls: "dice-toolbar-btn dice-toolbar-roll" });
+		setIcon(rollBtn, "dices");
+		rollBtn.addEventListener("click", () => this.onRoll());
+
+		// 选表：只显示文件名，下拉换同文件夹其他表（「骰子：」标签已删——阿麦拍板）
+		const select = bar.createEl("select", { cls: "dropdown dice-toolbar-select" });
 		if (this.tableFiles.length === 0) {
 			select.createEl("option", { text: t("noTables", { folder: this.plugin.settings.diceFolder }) });
 		}
@@ -376,13 +384,18 @@ private makeResolver(): RefResolver {
 			void this.loadCurrentFile().then(() => this.render());
 		});
 
-		// 「打开文档」：直接打开当前骰表的 .md，改池子不用回库翻文件（阿麦 10-22）
-		const openBtn = pickRow.createEl("button");
-		openBtn.textContent = t("openTableBtn");
-		openBtn.addClass("dice-reroll");
+		// 打开文档：Lucide 图标 + 悬停说明（阿麦拍板保留）
+		const openBtn = bar.createEl("button", { cls: "dice-toolbar-btn clickable-icon" });
+		setIcon(openBtn, "file-text");
+		setTooltip(openBtn, t("openTableBtn"));
 		openBtn.disabled = !this.currentFile;
-		openBtn.setAttribute("aria-label", t("openTableBtn"));
 		openBtn.addEventListener("click", () => this.openTableFile());
+
+		// 更多操作：Obsidian 原生 Menu 收拢低频功能（阿麦拍板：非自制抽屉）
+		const moreBtn = bar.createEl("button", { cls: "dice-toolbar-btn clickable-icon" });
+		setIcon(moreBtn, "more-vertical");
+		setTooltip(moreBtn, t("moreMenu"));
+		moreBtn.addEventListener("click", (e) => this.openMoreMenu(e));
 
 		// ── 选骰子行（文件内有多个 H1 时出现）──
 		if (this.diceList.length > 1) {
@@ -421,27 +434,30 @@ private makeResolver(): RefResolver {
 			resultBox.createEl("p", { text: t("emptyResult"), cls: "dice-result-empty" });
 		}
 
-		// ── 按钮行 ──
-		const btnRow = root.createDiv({ cls: "dice-btn-row" });
-		const rollBtn = btnRow.createEl("button");
-		rollBtn.textContent = t("rollBtn");
-		rollBtn.addClass("mod-cta");
-		rollBtn.addEventListener("click", () => this.onRoll());
-		const saveBtn = btnRow.createEl("button");
-		saveBtn.textContent = t("saveBtn");
-		saveBtn.disabled = !this.lastResult;
-		saveBtn.addEventListener("click", () => void this.onSave());
-		const copyBtn = btnRow.createEl("button");
-		copyBtn.textContent = t("copyBtn");
-		copyBtn.disabled = !this.lastResult;
-		copyBtn.addEventListener("click", () => void this.onCopy());
-		const noteBtn = btnRow.createEl("button");
-		noteBtn.textContent = t("writeNoteBtn");
-		noteBtn.disabled = !this.lastResult;
-		noteBtn.addEventListener("click", () => this.writeToCurrentNote());
-
 		// ── 历史区 ──
 		this.renderHistory(root);
+	}
+
+	/** ⋮ 更多操作菜单（1.6，阿麦 10-30 拍板）：Obsidian 原生 Menu，低频功能收拢不占屏 */
+	private openMoreMenu(evt: MouseEvent): void {
+		const has = !!this.lastResult;
+		const menu = new Menu();
+		menu.addItem((mi) =>
+			mi.setTitle(t("saveBtn")).setIcon("save").setDisabled(!has).onClick(() => void this.onSave())
+		);
+		menu.addItem((mi) =>
+			mi.setTitle(t("copyBtn")).setIcon("copy").setDisabled(!has).onClick(() => void this.onCopy())
+		);
+		menu.addItem((mi) =>
+			mi.setTitle(t("writeNoteBtn")).setIcon("file-input").setDisabled(!has).onClick(() => this.writeToCurrentNote())
+		);
+		menu.addSeparator();
+		menu.addItem((mi) =>
+			mi.setTitle(t("changeFolderMenu")).setIcon("folder-open").onClick(() => {
+				new FolderPathModal(this.app, this.plugin).open();
+			})
+		);
+		menu.showAtMouseEvent(evt);
 	}
 
 	/**
@@ -512,7 +528,7 @@ private makeResolver(): RefResolver {
 	}
 
 	/**
-	 * 打开当前骰表文档（阿麦 2026-10-22：点一下直接开文件，改池子不用回库翻）。
+	 * 打开当前骰子文档（阿麦 2026-10-22：点一下直接开文件，改池子不用回库翻）。
 	 * 已在某标签页打开 → 聚焦它（不开重复标签）；否则新开标签页——不覆盖正在编辑的笔记。
 	 */
 	private openTableFile(): void {

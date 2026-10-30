@@ -5,6 +5,8 @@ import { t } from "./i18n";
 
 export default class DiceTablePlugin extends Plugin {
 	settings!: DiceTableSettings;
+	/** 设置页引用（1.6：面板改路径时反向走 setControlValue，与设置页双向同步） */
+	settingsTab?: DiceTableSettingTab;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -23,7 +25,9 @@ export default class DiceTablePlugin extends Plugin {
 			callback: () => this.activateView(),
 		});
 
-		this.addSettingTab(new DiceTableSettingTab(this.app, this));
+		const settingsTab = new DiceTableSettingTab(this.app, this);
+		this.addSettingTab(settingsTab);
+		this.settingsTab = settingsTab;
 	}
 
 	// 注意：不要在 onunload 里 detach leaves——那会把界面重置回默认位置，
@@ -52,7 +56,7 @@ export default class DiceTablePlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 
-	/** 设置变更后通知所有打开中的界面重扫列表与索引（O1：换骰表路径免重载，阿麦 10-22） */
+	/** 设置变更后通知所有打开中的界面重扫列表与索引（O1：换骰子路径免重载，阿麦 10-22） */
 	async refreshDiceViews(): Promise<void> {
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_DICE_TABLE)) {
 			const view = leaf.view;

@@ -1,4 +1,4 @@
-// 骰表解析与摇骰引擎
+// 骰子解析与摇骰引擎
 // 结构约定（四机制分层，阿麦 2026-10-21 定稿）：
 //   # H1   = 骰子（一套表；一个文件可含多套；可选列表只列 H1）
 //   ## H2  = 池   （选了一套骰子，其下所有 H2 一起摇；不进可选列表）
@@ -56,14 +56,14 @@ export interface Dice {
 	randomPoolRepeat: boolean;
 }
 
-/** 骰表文件解析结果 */
+/** 骰子文件解析结果 */
 export interface ParsedTable {
 	diceList: Dice[];
 }
 
 /**
- * 解析一份骰表 Markdown 文本。
- * 宽容处理：忽略 frontmatter（--- ... ---）、代码块内的内容不当作骰表。
+ * 解析一份骰子 Markdown 文本。
+ * 宽容处理：忽略 frontmatter（--- ... ---）、代码块内的内容不当作骰子。
  */
 export function parseTable(text: string): ParsedTable {
 	const diceList: Dice[] = [];

@@ -5,7 +5,7 @@ import { ManualModal } from "./manual-modal";
 import type { HistoryEntry } from "./result";
 
 export interface DiceTableSettings {
-	/** 骰表文件夹（库内相对路径） */
+	/** 骰子文件夹（库内相对路径） */
 	diceFolder: string;
 	/** 默认保存文件夹 */
 	saveFolder: string;
@@ -32,7 +32,7 @@ export interface DiceTableSettings {
 }
 
 export const DEFAULT_SETTINGS: DiceTableSettings = {
-	diceFolder: "骰表",
+	diceFolder: "骰子",
 	saveFolder: "骰子结果",
 	nameTemplate: "{H1}_{YYYYMMDD-HHmm}",
 	saveFormat: "markdown",
@@ -68,9 +68,11 @@ export class DiceTableSettingTab extends PluginSettingTab {
 			this.plugin.settings.saveMode = "newfile";
 		}
 		await this.plugin.saveSettings();
-		// O1（阿麦 10-22）：换骰表路径即时生效，免重载插件
+		// O1（阿麦 10-22）：换骰子路径即时生效，免重载插件
 		if (key === "diceFolder") {
 			await this.plugin.refreshDiceViews();
+			// 1.6（阿麦 10-30）：面板改路径 → 设置页若开着也实时回显（双向同步）
+			this.update();
 		}
 		if (key === "saveFormat" || key === "saveMode") this.update();
 		if (key === "multiSaveMode" || key === "noteWriteMode" || key === "chainWrap" || key === "chainSep") {
@@ -90,7 +92,7 @@ export class DiceTableSettingTab extends PluginSettingTab {
 				control: {
 					type: "folder",
 					key: "diceFolder",
-					placeholder: "骰表",
+					placeholder: "骰子",
 					defaultValue: DEFAULT_SETTINGS.diceFolder,
 				},
 			},

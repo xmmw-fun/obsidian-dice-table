@@ -76,9 +76,56 @@
 	margin: 0;
 }
 
-.dice-btn-row {
+/* 吸顶工具栏（1.6）：摇骰 / 选表 / 打开文档 / 更多操作，一行常驻顶部 */
+.dice-toolbar {
+	position: sticky;
+	top: 0;
+	z-index: 5;
 	display: flex;
-	gap: 8px;
+	align-items: center;
+	gap: 6px;
+	/* 负外边距抵消视图内边距，让工具栏通栏铺满、滚动内容从它底下穿过 */
+	margin: -12px -16px 12px;
+	padding: 8px 12px;
+	background: var(--background-primary);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.dice-toolbar-select {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.dice-toolbar-btn {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 5px 7px;
+}
+
+.dice-toolbar-btn:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+/* 摇骰按钮＝主操作：跟随 Obsidian 外观的重点色（阿麦 10-30：原来太不明显）
+   双类选择器抬高权重，防止主题对 button 的覆盖（重点色没生效的加固） */
+.dice-table-view .dice-toolbar-roll {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border: none;
+}
+
+.dice-table-view .dice-toolbar-roll:hover {
+	background: var(--interactive-accent-hover);
+	color: var(--text-on-accent);
+}
+
+/* 修改路径 Modal 的输入框（1.6） */
+.dice-folder-input {
+	width: 100%;
+	margin-bottom: 12px;
 }
 
 /* 历史区 */

@@ -86,22 +86,27 @@ export function rollPoolFull(pool: Pool, resolver: RefResolver, chainFmt: ChainF
 		if (n > 1 && targetDice) {
 			const instances: ResultInstance[] = [];
 			for (let i = 0; i < n; i++) {
-				instances.push({
-					index: i,
-					items: targetDice.pools.map((p) => rollPoolFull(p, resolver, chainFmt, depth + 1)),
-				});
+				// 每套实例＝一个占位符单元（阿麦 10-29 拍板第 3 项：CP ×2 两个角色各摇各的名字）
+				const instCache = newPlaceholderCache();
+				const items = targetDice.pools.map((p) => rollPoolFull(p, resolver, chainFmt, depth + 1));
+				applyPlaceholders(items, resolver, instCache);
+				instances.push({ index: i, items });
 			}
 			return { pool, values: [], subResults: [], instances };
 		}
 
 		// 单套：目标是整套骰子 → 展开为子池；否则按单池解析
 		if (targetDice) {
+			const instCache = newPlaceholderCache();
 			const subResults = targetDice.pools.map((p) => rollPoolFull(p, resolver, chainFmt, depth + 1));
+			applyPlaceholders(subResults, resolver, instCache);
 			return { pool, values: [], subResults, instances: [] };
 		}
 		const targetPool = resolver.resolvePool(pool.ref);
 		if (targetPool) {
+			const instCache = newPlaceholderCache();
 			const nested = rollPoolFull(targetPool, resolver, chainFmt, depth + 1);
+			applyPlaceholders([nested], resolver, instCache);
 			return { pool, values: nested.values.length > 0 ? nested.values : [flattenItem(nested)], subResults: nested.subResults, instances: nested.instances };
 		}
 		// 找不到目标：当作普通池；记一次 miss（view 层统一提示，阿麦 10-23）
@@ -138,6 +143,8 @@ export function rollPoolFull(pool: Pool, resolver: RefResolver, chainFmt: ChainF
  * 选中的池仍走 rollPoolFull（子池/池引用/链式照常展开）。
  */
 export function rollDiceFull(dice: Dice, resolver: RefResolver, chainFmt: ChainFormat): ResultItem[] {
+	// 顶层摇骰＝一个占位符单元（阿麦 10-29 拍板第 3 项：单元内同名占位符只摇一次）
+	const phCache = newPlaceholderCache();
 	if (dice.randomPoolCount > 0 && dice.pools.length > 0) {
 		const n = Math.min(
 			dice.randomPoolCount,
@@ -156,9 +163,64 @@ export function rollDiceFull(dice: Dice, resolver: RefResolver, chainFmt: ChainF
 				idx.splice(j, 1);
 			}
 		}
-		return picked.map((p) => rollPoolFull(p, resolver, chainFmt));
+		const items = picked.map((p) => rollPoolFull(p, resolver, chainFmt));
+		applyPlaceholders(items, resolver, phCache);
+		return items;
 	}
-	return dice.pools.map((p) => rollPoolFull(p, resolver, chainFmt));
+	const items = dice.pools.map((p) => rollPoolFull(p, resolver, chainFmt));
+	applyPlaceholders(items, resolver, phCache);
+	return items;
+}
+
+// ---------------------------------------------------------------------------
+// 词库/句子模板（阿麦 2026-10-29 拍板，1.5 规格）：面文本 `{池名}` 占位符填词
+// 词库＝任何普通池（零新结构）；解析复用 resolver——裸名仅当前文档、跨文档走链接，与 `->` 同一套规矩
+// 单元边界＝顶层摇骰 / 池引用的一套实例；单元内同名占位符只摇一次（cache）
+// ---------------------------------------------------------------------------
+
+/** 占位符正则：`{池名}`——内容不含花括号与换行；摇出的词里再有 {...} 不递归（单遍替换天然满足） */
+const PLACEHOLDER_RE = /\{([^{}\n]+)\}/g;
+
+/** 新建一个占位符单元的「同名＝同词」缓存 */
+export function newPlaceholderCache(): Map<string, string> {
+	return new Map();
+}
+
+/** 填一段文本里的全部占位符；未定义/空池 → 原样保留＋onMiss 提示（拍板第 7 项，绝不静默） */
+function fillPlaceholders(text: string, resolver: RefResolver, cache: Map<string, string>): string {
+	if (!text.includes("{")) return text;
+	return text.replace(PLACEHOLDER_RE, (raw, inner: string) => {
+		const key = inner.trim();
+		if (!key) return raw;
+		const hit = cache.get(key);
+		if (hit !== undefined) return hit;
+		const pool = resolver.resolvePool(key);
+		let word: string | null = null;
+		if (pool) {
+			// 数字池当词库（拍板第 6 项）：摇一个区间值填入；面池摇一条（权重 ^N 天然生效）
+			if (pool.numberRange) word = rollNumberRange(pool.numberRange, 1, true)[0] ?? null;
+			// 空池按 miss 处理（rollPoolValues 对空面返回「（该池没有可摇的条目）」占位串，不能当词填进句子）
+			else if (pool.faces.length > 0) word = rollPoolValues({ ...pool, count: 1 })[0] ?? null;
+		}
+		if (word === null || word === "") {
+			resolver.onMiss?.(`{${key}}`);
+			return raw;
+		}
+		cache.set(key, word);
+		return word;
+	});
+}
+
+/**
+ * 对一组结果就地填词（在各摇骰单元的收口处调用）。
+ * 注意：instances 不在这里走——池引用的每套实例在展开处已用自己的 cache 填过，
+ * 外层再走会重复 onMiss、也会把「每套实例各摇各的」错误地合成同名。
+ */
+export function applyPlaceholders(items: ResultItem[], resolver: RefResolver, cache: Map<string, string>): void {
+	for (const item of items) {
+		item.values = item.values.map((v) => fillPlaceholders(v, resolver, cache));
+		applyPlaceholders(item.subResults, resolver, cache);
+	}
 }
 
 /** 摇一个池的面（带 count/allowRepeat）；命中带 `->` 的面时递归解析并按格式拼接 */
