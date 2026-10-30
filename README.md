@@ -23,8 +23,10 @@ Any Markdown file that follows this shape is a dice table. Write 5 pools and you
 - **References & nesting** — `## Character ×3 -> Attributes` rolls N characters from one attribute definition (define once, reuse everywhere); `- Magic item -> Rarity` keeps rolling after a hit. Cross-document targets use Obsidian links: wiki links `[[folder/file#dice]]` (shortest / vault / relative paths) and Markdown links `[text](folder/file.md)` both work; a plain name (no brackets) is looked up **in the current document only** — cross-document references always use link forms. Unresolved references are reported with a notice, never silently ignored.
 - **Random subset of pools** — write `# Scene card ×3` on the H1 line and each roll draws 3 random pools (append `重复`/`repeat` to allow the same pool twice).
 - **Random number pools** — `## Strength 1~100` rolls a random integer (endpoints included); `## Weight 0.1~9.9 小数2位` rolls decimals; `## Luck ×5 1~100` rolls 5 at once (no repeats by default — add `重复`/`repeat` to allow them). Negative ranges work: `-10~10`.
+- **Word banks & sentence templates** — write `{color}` inside a face and it fills with a random word from the same-named pool. Any ordinary pool is a word bank (weights apply); `{[[file#pool]]}` reaches other files; the same placeholder rolls **once per roll**, so `{name} picks up {name}'s sword` is one person.
+- **Sticky toolbar** — roll, switch tables, open the file, and a "more actions" menu (save / copy / write to note / change the table folder, two-way synced with settings) sit in one row pinned to the top, however long the results get.
 - **Persisted roll history** — the last 20 rolls survive restarting Obsidian and can be loaded back into the result area.
-- **Open the table file** — a button next to the table picker opens the current table's Markdown file for quick edits.
+- **Open the table file** — the file icon in the sticky toolbar opens the current table's Markdown file for quick edits.
 - **Multiple dice per file** — a file may contain several H1 dice; pick one from a dropdown.
 - **Auto-refresh** — new, renamed or deleted table files in the dice folder are picked up automatically, and changing the dice folder itself takes effect without reloading the plugin.
 - **Save with one click** — results are saved using your own naming template, e.g. `{H1}_{YYYYMMDD-HHmm}`. Variables: `{H1}`, `{H2}`, `{H2:2}`, `{YYYY}`, `{MM}`, `{DD}`, `{HH}`, `{mm}`, `{ss}`, `{WW}` and combos like `{YYYYMMDD-HHmm}`. Illegal filename characters are replaced automatically; name collisions get a numeric suffix.
@@ -68,7 +70,7 @@ None. Dice Table makes no network requests and collects no data.
 
 ## 中文说明
 
-**骰子桌（Dice Table）** 是一个 Obsidian 随机结果插件：把骰子写成普通 Markdown 笔记（H1＝骰子名，H2＝要摇的项，横杠条目＝可摇的面），插件从每个项里随机抽一条组成一组结果，满意就一键保存为笔记或导出 PNG/JPG 图片。引擎与数据彻底分离：插件不认识任何具体骰子，只认 H1/H2/横杠结构；表里有几个 H2 就摇几项。支持单项重摇、`×N` 多选（`## 战利品 ×3`，默认不重复，`×3重复`/`×3repeat` 允许重复）、面权重 `^N`（`- 稀有剑 ^5`）、嵌套与引用（`## 角色 ×3 -> 属性集` 属性集单点定义、改一处全局生效；跨文档用链接语法：`[[文件夹/文件#骰子名]]` 双链（最短链/库内路径/绝对/相对）或 `[显示](文件夹/文件.md)` Markdown 链接；裸名只在当前文档内查找，引用不上会提示）、随机子集池（`# 场景卡 ×3` 每摇随机 3 个池，`×3重复` 可重复）、随机数字池（`## 力量 1~100` 整数、`## 体重 0.1~9.9 小数2位` 小数、`## 幸运 ×5 1~100` 一次摇 5 个且默认不重复）、摇骰历史持久化（最近 20 组重启后仍在）、选表行一键打开当前骰子文件、一个文件多个骰子、自定义命名模板（如 `{H1}_{YYYYMMDD-HHmm}`）、导出图片时自动固化当前主题色。插件不发起任何网络请求。
+**骰子桌（Dice Table）** 是一个 Obsidian 随机结果插件：把骰子写成普通 Markdown 笔记（H1＝骰子名，H2＝要摇的项，横杠条目＝可摇的面），插件从每个项里随机抽一条组成一组结果，满意就一键保存为笔记或导出 PNG/JPG 图片。引擎与数据彻底分离：插件不认识任何具体骰子，只认 H1/H2/横杠结构；表里有几个 H2 就摇几项。支持单项重摇、`×N` 多选（`## 战利品 ×3`，默认不重复，`×3重复`/`×3repeat` 允许重复）、面权重 `^N`（`- 稀有剑 ^5`）、嵌套与引用（`## 角色 ×3 -> 属性集` 属性集单点定义、改一处全局生效；跨文档用链接语法：`[[文件夹/文件#骰子名]]` 双链（最短链/库内路径/绝对/相对）或 `[显示](文件夹/文件.md)` Markdown 链接；裸名只在当前文档内查找，引用不上会提示）、随机子集池（`# 场景卡 ×3` 每摇随机 3 个池，`×3重复` 可重复）、随机数字池（`## 力量 1~100` 整数、`## 体重 0.1~9.9 小数2位` 小数、`## 幸运 ×5 1~100` 一次摇 5 个且默认不重复）、词库占位符（面里写 `{颜色}`，摇骰时从同名池摇一个词填进句子——任何普通池都是词库、权重照常生效，跨文档用 `{[[文件#池]]}`，同一次摇骰内同名占位符只摇一次）、摇骰历史持久化（最近 20 组重启后仍在）、顶部吸顶工具栏（摇骰/换表/一键打开当前骰子文件/更多操作——一键保存、复制、写入笔记、修改骰子路径并与设置页双向同步）、一个文件多个骰子、自定义命名模板（如 `{H1}_{YYYYMMDD-HHmm}`）、导出图片时自动固化当前主题色。插件不发起任何网络请求。
 
 ## License
 

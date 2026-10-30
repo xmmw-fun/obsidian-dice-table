@@ -1,6 +1,6 @@
 {
   "name": "obsidian-dice-table",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Dice Table - roll and save random result sets from Markdown dice tables",
   "main": "main.js",
   "scripts": {

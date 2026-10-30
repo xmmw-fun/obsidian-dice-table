@@ -1,7 +1,7 @@
 # Dice Table — Complete User Manual
 
-> Applies to: 1.4.0+ ｜ Plugin ID: `dice-table` ｜ Marketplace: https://community.obsidian.md/plugins/dice-table
-> Updated: 2026-10-25
+> Applies to: 1.5.0+ ｜ Plugin ID: `dice-table` ｜ Marketplace: https://community.obsidian.md/plugins/dice-table
+> Updated: 2026-10-30
 
 ---
 
