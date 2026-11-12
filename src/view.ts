@@ -1,8 +1,9 @@
 import { ItemView, Menu, Notice, WorkspaceLeaf, TFolder, TFile, MarkdownView, setIcon, setTooltip } from "obsidian";
 import type DiceTablePlugin from "./main";
-import { parseTable, collectRefTargets, Dice, Pool, linkCandidates, extractLinkPath } from "./table";
-import { rollPoolFull, rollDiceFull, RefResolver, ResultItem, ChainFormat, defaultResolvePool, HistoryEntry } from "./result";
-import { renderNameTemplate, resolveUniquePath, sanitizeFilename } from "./save";
+import { parseTable, collectRefTargets, allPoolsDeep, referencedPoolNames, Dice, Pool, linkCandidates, extractLinkPath } from "./table";
+import { rollPoolFull, rollDiceFull, RefResolver, ResultItem, ChainFormat, defaultResolvePool, HistoryEntry, flattenItem, applyPlaceholders, createRollContext } from "./result";
+import { resultTextLines, imageRows, resultMarkdownLines } from "./result-format";
+import { renderNameTemplate, resolveUniquePath, sanitizeFilename, paragraphEndLine } from "./save";
 import { renderResultCard } from "./image-export";
 import { ensureFolder } from "./settings";
 import { FolderPathModal } from "./path-modal";
@@ -44,6 +45,9 @@ export class DiceTableView extends ItemView {
 	// 历史落盘防抖计时器
 	private historySaveTimer: number | null = null;
 
+	// 最近一次激活的笔记视图（写入笔记用：骰子面板在前台时 getActiveViewOfType 会返回 null，阿麦 10-30）
+	private lastMarkdownView: MarkdownView | null = null;
+
 	// 库内文件变化后延迟刷新（防抖）
 	private refreshTimer: number | null = null;
 
@@ -77,6 +81,14 @@ export class DiceTableView extends ItemView {
 			if (folder && !file.path.startsWith(`${folder}/`)) return;
 			this.scheduleRefresh();
 		}));
+
+		// 记住最近激活的笔记：骰子面板自己在前台时，写入笔记要回退到它（否则只会提示「没有打开的笔记」）
+		const rememberNote = (): void => {
+			const v = this.app.workspace.getActiveViewOfType(MarkdownView);
+			if (v?.file) this.lastMarkdownView = v;
+		};
+		this.registerEvent(this.app.workspace.on("active-leaf-change", rememberNote));
+		rememberNote();
 
 		await this.refreshTableList();
 		// 历史持久化（阿麦 2026-10-23）：直接挂 settings.history 引用——增删即改设置对象，防抖落盘
@@ -314,6 +326,7 @@ private makeResolver(): RefResolver {
 		return cur?.dice.find((x) => x.title === (name ?? target)) ?? null;
 	};
 	const findPool = (target: string): Pool | null => {
+		// 池查找递归进 H3 子池（helper 在 table.ts，便于 e2e）
 		// 双链/md 链接/路径形式：定位文件后按池名找（不带池名的由 findDice 合成处理）
 		const link = parseLink(target) ?? parseMdLink(target);
 		const { path, name } = splitTarget(link ? link.filePart + (link.name ? `#${link.name}` : "") : target);
@@ -323,18 +336,18 @@ private makeResolver(): RefResolver {
 			const file = locateFile(filePart);
 			const src = file ? sources.find((s) => s.path === file.path) : undefined;
 			if (!src) return null;
-			return src.dice.flatMap((d) => d.pools).find((x) => x.title === name) ?? null;
+			return allPoolsDeep(src.dice).find((x) => x.title === name) ?? null;
 		}
 		// 裸名带 #：`文件#池名`——先按文件名匹配，再在其中找池（兼容 1.3.0 既有写法）
 		if (name) {
 			const filePart0 = target.split("#")[0];
 			const src = sources.find((s) => s.path.replace(/\.md$/, "").split("/").pop() === filePart0 || s.path === filePart0);
 			if (!src) return null;
-			return src.dice.flatMap((d) => d.pools).find((x) => x.title === name) ?? null;
+			return allPoolsDeep(src.dice).find((x) => x.title === name) ?? null;
 		}
 		// 纯裸名池：**仅限当前文档**（同 findDice 口径——阿麦 10-23 20:47：裸名不跨文档）
 		const cur = sources.find((s) => s.path === curPath);
-		return cur?.dice.flatMap((d) => d.pools).find((x) => x.title === target) ?? null;
+		return cur ? allPoolsDeep(cur.dice).find((x) => x.title === target) ?? null : null;
 	};
 	// 解析失败收集（阿麦 10-23：摇完统一提示，避免用户不知道引用没生效）
 	const missed: string[] = [];
@@ -348,13 +361,24 @@ private makeResolver(): RefResolver {
 	};
 }
 
+	/** 本套骰子里「被引用且指向当前文件」的池名（方案 A 隐藏用；跨文件同名不误伤） */
+	private referencedTitles(dice: Dice): string[] {
+		return referencedPoolNames(
+			collectRefTargets(dice),
+			this.currentFile,
+			allPoolsDeep([dice]).map((p) => p.title)
+		);
+	}
+
 	/** 当前链式拼接格式（用户设置项） */
 	private chainFormat(): ChainFormat {
 		const s = this.plugin.settings;
 		return { wrap: s.chainWrap, sep: s.chainSep };
 	}
 
-	private render(): void {
+	private render(preserveScroll = false): void {
+		const scroller = this.contentEl;
+		const keepTop = preserveScroll ? scroller.scrollTop : 0;
 		const root = this.contentEl;
 		root.empty();
 		root.addClass("dice-table-view");
@@ -384,12 +408,12 @@ private makeResolver(): RefResolver {
 			void this.loadCurrentFile().then(() => this.render());
 		});
 
-		// 打开文档：Lucide 图标 + 悬停说明（阿麦拍板保留）
-		const openBtn = bar.createEl("button", { cls: "dice-toolbar-btn clickable-icon" });
-		setIcon(openBtn, "file-text");
-		setTooltip(openBtn, t("openTableBtn"));
-		openBtn.disabled = !this.currentFile;
-		openBtn.addEventListener("click", () => this.openTableFile());
+		// 一键保存：Lucide 图标 + 悬停说明（阿麦 10-30 20:09 拍板：高频操作紧挨下拉，打开文档挪进 ⋮）
+		const saveBtn = bar.createEl("button", { cls: "dice-toolbar-btn clickable-icon" });
+		setIcon(saveBtn, "save");
+		setTooltip(saveBtn, t("saveBtn"));
+		saveBtn.disabled = !this.lastResult;
+		saveBtn.addEventListener("click", () => void this.onSave());
 
 		// 更多操作：Obsidian 原生 Menu 收拢低频功能（阿麦拍板：非自制抽屉）
 		const moreBtn = bar.createEl("button", { cls: "dice-toolbar-btn clickable-icon" });
@@ -428,7 +452,7 @@ private makeResolver(): RefResolver {
 		const resultBox = root.createDiv({ cls: "dice-result" });
 		if (this.lastResult) {
 			for (let i = 0; i < this.lastResult.length; i++) {
-				this.renderResultItem(resultBox, this.lastResult[i], i);
+				this.renderResultItem(resultBox, this.lastResult[i], 0);
 			}
 		} else {
 			resultBox.createEl("p", { text: t("emptyResult"), cls: "dice-result-empty" });
@@ -436,6 +460,9 @@ private makeResolver(): RefResolver {
 
 		// ── 历史区 ──
 		this.renderHistory(root);
+
+		// 单项重摇后保持滚动位置（阿麦 10-30：点深处 ↻ 不再跳回顶部）
+		if (preserveScroll) scroller.scrollTop = keepTop;
 	}
 
 	/** ⋮ 更多操作菜单（1.6，阿麦 10-30 拍板）：Obsidian 原生 Menu，低频功能收拢不占屏 */
@@ -443,15 +470,16 @@ private makeResolver(): RefResolver {
 		const has = !!this.lastResult;
 		const menu = new Menu();
 		menu.addItem((mi) =>
-			mi.setTitle(t("saveBtn")).setIcon("save").setDisabled(!has).onClick(() => void this.onSave())
-		);
-		menu.addItem((mi) =>
 			mi.setTitle(t("copyBtn")).setIcon("copy").setDisabled(!has).onClick(() => void this.onCopy())
 		);
 		menu.addItem((mi) =>
 			mi.setTitle(t("writeNoteBtn")).setIcon("file-input").setDisabled(!has).onClick(() => this.writeToCurrentNote())
 		);
 		menu.addSeparator();
+		// 打开文档入菜单（阿麦 10-30 20:09 拍板：高频的保存上工具栏，低频的进 ⋮）
+		menu.addItem((mi) =>
+			mi.setTitle(t("openTableBtn")).setIcon("file-text").setDisabled(!this.currentFile).onClick(() => this.openTableFile())
+		);
 		menu.addItem((mi) =>
 			mi.setTitle(t("changeFolderMenu")).setIcon("folder-open").onClick(() => {
 				new FolderPathModal(this.app, this.plugin).open();
@@ -461,38 +489,44 @@ private makeResolver(): RefResolver {
 	}
 
 	/**
-	 * 渲染一个池的结果：普通值一行；有子池则父池一块、子池另起一行缩进；
+	 * 渲染一个池的结果：普通值一行；子池另起一行、按深度递进缩进；
 	 * 有多套实例则按「第 N 个X」分组（阿麦 12:30/13:02 定稿）。
+	 * 1.6.1（阿麦 10-30 纠正）：**每一项（含任意层级的子项）都能单独重摇**——旧实现给子项传
+	 * index=-1 被守卫挡掉，按钮点了没反应；现改成按结果树里的对象引用就地重摇，层级不限。
 	 */
-	private renderResultItem(container: HTMLElement, item: ResultItem, index: number, isSub = false): void {
-		const row = container.createDiv({ cls: isSub ? "dice-result-row dice-sub" : "dice-result-row" });
-		row.createSpan({ text: item.pool.title, cls: "dice-result-pool" });
+	private renderResultItem(container: HTMLElement, item: ResultItem, depth: number, isSub = false): void {
+		const title =
+			!isSub && item.instances.length > 1
+				? t("instanceGroup", { title: item.pool.title, n: item.instances.length })
+				: item.pool.title;
+		const row = container.createDiv({ cls: `dice-result-row dice-depth-${Math.min(depth, 8)}` });
+		row.createSpan({ text: title, cls: "dice-result-pool" });
 		if (item.values.length > 0) {
 			row.createSpan({ text: item.values.join("，"), cls: "dice-result-value" });
+		} else if (item.values.length === 0 && item.subResults.length === 0 && item.instances.length === 0) {
+			row.createSpan({ text: "（空）", cls: "dice-result-value dice-result-value-empty" });
 		}
-		if (item.values.length === 0 && item.subResults.length === 0 && item.instances.length === 0) {
-			row.createSpan({ text: item.values.join("，") || "（空）", cls: "dice-result-value" });
-		}
+		// 每一项都能单独重摇（含子项、含实例里的项）
 		const reroll = row.createEl("button");
 		reroll.textContent = "↻";
 		reroll.addClass("dice-reroll");
 		reroll.setAttribute("aria-label", t("rerollAria", { pool: item.pool.title }));
-		reroll.addEventListener("click", () => this.onRerollOne(index));
+		reroll.addEventListener("click", () => this.onRerollItem(item));
 
-		// 子池：另起一行、缩进
+		// 子池：另起一行，深度 +1
 		for (const sub of item.subResults) {
-			this.renderResultItem(container, sub, -1, true);
+			this.renderResultItem(container, sub, depth + 1, true);
 		}
 
-		// 多套实例：每组一块
+		// 多套实例：小标题（深度 +1）＋每套的子结果（深度 +2）；小标题自带 ↻＝只重摇这一套
 		if (item.instances.length > 0) {
-			const label = item.instances.length === 1 ? item.pool.title : `${item.pool.title}（${item.instances.length} 套）`;
-			const groupLabel = container.createDiv({ cls: "dice-instance-group" });
-			groupLabel.setText(label);
 			item.instances.forEach((inst, k) => {
-				const head = container.createDiv({ cls: "dice-instance-head" });
+				const head = container.createDiv({ cls: `dice-instance-head dice-depth-${Math.min(depth + 1, 8)}` });
 				head.setText(t("instanceLabel", { n: k + 1, title: item.pool.title }));
-				for (const sub of inst.items) this.renderResultItem(container, sub, -1, true);
+				const instBtn = head.createEl("button", { cls: "dice-reroll", text: "↻" });
+				instBtn.setAttribute("aria-label", t("rerollInstanceAria", { n: k + 1, title: item.pool.title }));
+				instBtn.addEventListener("click", () => this.onRerollInstance(item, k));
+				for (const sub of inst.items) this.renderResultItem(container, sub, depth + 2, true);
 			});
 		}
 	}
@@ -507,16 +541,21 @@ private makeResolver(): RefResolver {
 			const pad = (v: number) => String(v).padStart(2, "0");
 			const hhmm = `${pad(entry.time.getHours())}:${pad(entry.time.getMinutes())}`;
 			row.createSpan({ text: hhmm, cls: "dice-history-time" });
+			// 摘要用 flattenItem 展开（多套实例/子池的 values 本身是空的，原来只取 values 会显示空白）
 			row.createSpan({
-				text: `${entry.diceTitle} · ${entry.items.map((it) => it.values.join("，")).join(" / ")}`,
+				text: `${entry.diceTitle} · ${entry.items
+					.map((it) => `${it.pool.title}：${flattenItem(it)}`)
+					.filter((s) => !s.endsWith("："))
+					.join(" / ")}`,
 				cls: "dice-history-text",
 			});
 			const load = row.createEl("button");
 			load.textContent = t("historyLoad");
-			load.addClass("dice-reroll");
+			load.addClass("dice-history-load");
 			load.setAttribute("aria-label", t("historyLoadAria"));
 			load.addEventListener("click", () => {
-				this.lastResult = entry.items;
+				// 载入的是快照的副本（否则后续重摇会改到历史本身）
+				this.lastResult = this.cloneItems(entry.items);
 				// 载入的组可能来自别的骰子：切回它的文件与骰子
 				const keepDiceTitle = entry.diceTitle;
 				const idx = this.diceList.findIndex((d) => d.title === keepDiceTitle);
@@ -552,12 +591,32 @@ private makeResolver(): RefResolver {
 		}
 		const resolver = this.makeResolver();
 		const fmt = this.chainFormat();
-		this.lastResult = rollDiceFull(this.currentDice, resolver, fmt);
+		this.lastResult = rollDiceFull(this.currentDice, resolver, fmt, {
+			showReferencedPools: this.plugin.settings.showReferencedPools,
+			hideTitles: this.referencedTitles(this.currentDice),
+		});
 		this.noteMissed(resolver);
-		this.history.push({ diceTitle: this.currentDice.title, items: this.lastResult, time: new Date() });
+		this.pushHistory();
+		this.render();
+	}
+
+	/** 深拷贝结果树：历史必须是快照，不能与当前结果共用对象（阿麦 10-30 实测：重摇会改掉历史） */
+	private cloneItems(items: ResultItem[]): ResultItem[] {
+		return typeof structuredClone === "function"
+			? structuredClone(items)
+			: (JSON.parse(JSON.stringify(items)) as ResultItem[]);
+	}
+
+	/** 记一条历史（整组快照）：整体摇骰与单条重摇都会调它（阿麦 10-30：单条重摇也要能载入） */
+	private pushHistory(): void {
+		if (!this.currentDice || !this.lastResult) return;
+		this.history.push({
+			diceTitle: this.currentDice.title,
+			items: this.cloneItems(this.lastResult),
+			time: new Date(),
+		});
 		if (this.history.length > 20) this.history.shift();
 		this.scheduleHistorySave();
-		this.render();
 	}
 
 	/** 摇骰后有引用没解析到时提示（阿麦 10-23：写错链接要让人知道，别静默出空结果） */
@@ -568,25 +627,59 @@ private makeResolver(): RefResolver {
 	}
 
 	/** 单项单独重摇：只重摇该项（含其子池与实例整组重摇），其余项不动 */
-	private onRerollOne(index: number): void {
-		if (!this.lastResult || index < 0 || !this.lastResult[index]) return;
-		const item = this.lastResult[index];
+	/**
+	 * 单项重摇（2026-10-30 修复：任意层级都能重摇）。
+	 * 直接改结果树里的那个对象——对象引用就是定位，不必再算顶层下标；
+	 * 子项/实例内的项重摇只动它自己，同层其它项保持不动。
+	 */
+	private onRerollItem(item: ResultItem): void {
 		const resolver = this.makeResolver();
 		const fmt = this.chainFormat();
-		const fresh = rollPoolFull(item.pool, resolver, fmt);
+		const ctx = createRollContext(resolver, fmt);
+		const fresh = rollPoolFull(item.pool, resolver, fmt, 0, ctx);
+		// 补填占位符（阿麦 10-30 实测：重摇后 {颜色} 会原样露出）；一次重摇＝一个单元
+		applyPlaceholders([fresh], ctx);
 		item.values = fresh.values;
 		item.subResults = fresh.subResults;
 		item.instances = fresh.instances;
-		this.render();
+		this.noteMissed(resolver);
+		this.pushHistory(); // 单条重摇也记一条历史（阿麦 10-30：否则载入不到）
+		this.render(true); // 保持滚动位置
 	}
 
-	/** 复制当前结果为文字进剪贴板 */
+	/**
+	 * 实例级重摇（阿麦 10-30）：只重摇「第 N 个X」这一套，其他套不动。
+	 * 有池引用：按引用重新解析目标骰子，重生成这一套的 items；
+	 * 无引用兜底：逐个重摇这一套里的子项（共用同一个填词 cache，保证同名同词）。
+	 */
+	private onRerollInstance(item: ResultItem, k: number): void {
+		const inst = item.instances[k];
+		if (!inst) return;
+		const resolver = this.makeResolver();
+		const fmt = this.chainFormat();
+		const ctx = createRollContext(resolver, fmt);
+		const targetDice = item.pool.ref ? resolver.resolveDice(item.pool.ref) : null;
+		let items: ResultItem[];
+		if (targetDice) {
+			items = targetDice.pools.map((p) => rollPoolFull(p, resolver, fmt, 1, ctx));
+			applyPlaceholders(items, ctx);
+		} else {
+			items = inst.items.map((sub) => {
+				const fresh = rollPoolFull(sub.pool, resolver, fmt, 0, ctx);
+				applyPlaceholders([fresh], ctx);
+				return fresh;
+			});
+		}
+		item.instances[k] = { index: inst.index, items };
+		this.noteMissed(resolver);
+		this.pushHistory();
+		this.render(true);
+	}
+
+	/** 复制当前结果为文字进剪贴板（2026-10-30 修复：实例/子池不再压扁，池名保留） */
 	private async onCopy(): Promise<void> {
 		if (!this.lastResult || !this.currentDice) return;
-		const lines: string[] = [`# ${this.currentDice.title}`];
-		for (const item of this.lastResult) {
-			lines.push(`- ${item.pool.title}：${this.flatten(item)}`);
-		}
+		const lines: string[] = [`# ${this.currentDice.title}`, ...resultTextLines(this.lastResult)];
 		try {
 			await navigator.clipboard.writeText(lines.join("\n"));
 			new Notice(t("copiedNotice"));
@@ -595,15 +688,12 @@ private makeResolver(): RefResolver {
 		}
 	}
 
-	/** 结果的 Markdown 小节（新文件正文 / 追加段落共用） */
+	/** 结果的 Markdown 小节（新文件正文 / 追加段落共用；2026-10-30 修复：与复制共用同一结构化输出） */
 	private resultSection(now: Date): string {
 		if (!this.lastResult) return "";
 		const pad = (v: number) => String(v).padStart(2, "0");
 		const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-		const lines: string[] = [`## ${stamp}`];
-		for (const item of this.lastResult) {
-			lines.push(`- ${item.pool.title}：${this.flatten(item)}`);
-		}
+		const lines: string[] = [`## ${stamp}`, ...resultTextLines(this.lastResult)];
 		return lines.join("\n");
 	}
 
@@ -636,7 +726,7 @@ private makeResolver(): RefResolver {
 			const path = await resolveUniquePath(this.app.vault, settings.saveFolder, baseName, ".md");
 			const lines: string[] = [`# ${this.currentDice.title}`, ""];
 			lines.push(`> ${t("rolledAtLabel")}：${now.toLocaleString()}`, "");
-			lines.push(...this.resultMarkdown(this.lastResult, settings.multiSaveMode));
+			lines.push(...resultMarkdownLines(this.lastResult, settings.multiSaveMode));
 			await this.app.vault.create(path, lines.join("\n"));
 			new Notice(t("savedNotice", { path }));
 			return;
@@ -646,7 +736,7 @@ private makeResolver(): RefResolver {
 		try {
 			const buf = await renderResultCard({
 				diceTitle: this.currentDice.title,
-				rows: this.lastResult.map((r) => ({ pool: r.pool.title, values: [this.flatten(r)] })),
+				rows: imageRows(this.lastResult),
 				rolledAt: now,
 				format,
 			});
@@ -658,73 +748,30 @@ private makeResolver(): RefResolver {
 		}
 	}
 
-	/** 把一个 ResultItem 展平成一段文字（子池/实例递归拼接） */
-	private flatten(item: ResultItem): string {
-		const parts: string[] = [];
-		if (item.values.length > 0) parts.push(item.values.join("，"));
-		for (const sub of item.subResults) {
-			const v = this.flatten(sub);
-			if (v) parts.push(v);
-		}
-		for (const inst of item.instances) {
-			const inner = inst.items.map((it) => this.flatten(it)).filter(Boolean).join("，");
-			if (inner) parts.push(inner);
-		}
-		return parts.join("，");
-	}
-
-	/**
-	 * 生成结果的 Markdown 行（方案乙·标题分层，阿麦 13:02）。
-	 * 普通池沿用现有格式：`## 池名` + `- 值`；
-	 * 多套实例（池引用 ×N）按设置：
-	 *   - grouped（默认）：`## 池名` 下 `### 第 N 个X` + `- 子池名：值`
-	 *   - blocks：每个实例一个 `## 池名（第 N 个）` 块
-	 */
-	private resultMarkdown(items: ResultItem[], mode: string): string[] {
-		const lines: string[] = [];
-		for (const item of items) {
-			if (item.instances.length === 0) {
-				lines.push(`## ${item.pool.title}`);
-				if (item.values.length > 0) lines.push(`- ${item.values.join("，")}`);
-				for (const sub of item.subResults) {
-					lines.push(`- ${sub.pool.title}：${this.flatten(sub)}`);
-				}
-				lines.push("");
-				continue;
-			}
-			if (mode === "blocks") {
-				item.instances.forEach((inst, k) => {
-					lines.push(`## ${item.pool.title}（${t("instanceOrdinal", { n: k + 1 })}）`);
-					for (const sub of inst.items) {
-						lines.push(`- ${sub.pool.title}：${this.flatten(sub)}`);
-					}
-					lines.push("");
-				});
-			} else {
-				lines.push(`## ${item.pool.title}`);
-				item.instances.forEach((inst, k) => {
-					lines.push(`### ${t("instanceLabel", { n: k + 1, title: item.pool.title })}`);
-					for (const sub of inst.items) {
-						lines.push(`- ${sub.pool.title}：${this.flatten(sub)}`);
-					}
-					lines.push("");
-				});
-			}
-		}
-		return lines;
+	/** 选写入目标：激活的笔记 → 最近激活过的 → 任意已打开的笔记（骰子面板在前台也能写） */
+	private pickNoteView(): MarkdownView | null {
+		const active = this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (active?.file) return active;
+		if (this.lastMarkdownView?.file) return this.lastMarkdownView;
+		let fallback: MarkdownView | null = null;
+		this.app.workspace.iterateAllLeaves((leaf) => {
+			if (!fallback && leaf.view instanceof MarkdownView && leaf.view.file) fallback = leaf.view;
+		});
+		return fallback;
 	}
 
 	/** 写入当前笔记：默认光标所在段落之后，可切文末追加（阿麦 11:52/12:53） */
 	private writeToCurrentNote(): void {
 		if (!this.lastResult || !this.currentDice) return;
-		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		// 目标笔记：当前激活的笔记 → 最近用过的笔记 → 任意已打开的笔记
+		const view = this.pickNoteView();
 		if (!view) {
 			new Notice(t("noActiveNote"));
 			return;
 		}
 		const editor = view.editor;
 		const lines: string[] = [`## ${this.currentDice.title}`];
-		lines.push(...this.resultMarkdown(this.lastResult, this.plugin.settings.multiSaveMode));
+		lines.push(...resultMarkdownLines(this.lastResult, this.plugin.settings.multiSaveMode));
 		const block = lines.join("\n").replace(/\n+$/, "");
 
 		const mode = this.plugin.settings.noteWriteMode;
@@ -732,15 +779,14 @@ private makeResolver(): RefResolver {
 			const last = editor.lastLine();
 			editor.replaceRange("\n\n" + block, { line: last, ch: editor.getLine(last).length });
 		} else {
-			// 光标所在段落之后：找到光标行的段落末尾
+			// 光标所在段落之后（阿麦 10-30 修正）：从光标行向下找到段落末行（遇空行/标题为止），
+			// 插在它的末尾——不再出现「插到上一段」，也不会在第 1 行 getLine(-1) 越界
 			const cur = editor.getCursor();
-			const lineText = editor.getLine(cur.line);
-			const atParaEnd = lineText.trim().length > 0 && cur.ch >= lineText.length;
-			const insertLine = atParaEnd ? cur.line : cur.line - 1;
-			const insertText = editor.getLine(insertLine);
-			editor.replaceRange("\n\n" + block, { line: insertLine, ch: insertText.length });
+			const lines = editor.getValue().split(/\r?\n/);
+			const endLine = paragraphEndLine(lines, cur.line);
+			editor.replaceRange("\n\n" + block, { line: endLine, ch: editor.getLine(endLine).length });
 		}
-		new Notice(t("writtenToNote"));
+		new Notice(t("writtenToNote", { name: view.file?.basename ?? "" }));
 	}
 
 	/** 追加保存：写入 保存文件夹/追加文件模板.md；不存在则先建（带 H1 头），存在则续写小节 */

@@ -21,6 +21,8 @@ export interface DiceTableSettings {
 	openLocation: "main" | "sidebar";
 	/** 多套实例的保存格式：grouped＝分组（默认）／blocks＝每实例独立块 */
 	multiSaveMode: "grouped" | "blocks";
+	/** 引用项（被 `->` 或 `{词库}` 引用的池）是否在结果里也占一行（阿麦 10-30） */
+	showReferencedPools: boolean;
 	/** 写入当前笔记的位置：cursor＝光标所在段落之后（默认）／append＝文末追加 */
 	noteWriteMode: "cursor" | "append";
 	/** 链式引用拼接：包裹符号 */
@@ -40,6 +42,8 @@ export const DEFAULT_SETTINGS: DiceTableSettings = {
 	appendFileTemplate: "{H1}",
 	openLocation: "main",
 	multiSaveMode: "grouped",
+	// 默认「不显示」：库只当来源，不在结果里重复占行（阿麦 10-30；可在设置里切成显示）
+	showReferencedPools: false,
 	noteWriteMode: "cursor",
 	chainWrap: "paren",
 	chainSep: "colon",
@@ -162,6 +166,15 @@ export class DiceTableSettingTab extends PluginSettingTab {
 					key: "multiSaveMode",
 					options: { grouped: t("optGrouped"), blocks: t("optBlocks") },
 					defaultValue: DEFAULT_SETTINGS.multiSaveMode,
+				},
+			},
+			{
+				name: t("sShowReferenced"),
+				desc: t("sShowReferencedDesc"),
+				control: {
+					type: "toggle",
+					key: "showReferencedPools",
+					defaultValue: DEFAULT_SETTINGS.showReferencedPools,
 				},
 			},
 			{

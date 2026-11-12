@@ -64,32 +64,33 @@ export default class DiceTablePlugin extends Plugin {
 		}
 	}
 
-	/** 按 openLocation 设置打开操作界面；已开着的界面若位置与设置不符，自动挪过去 */
+	/** 按 openLocation 设置打开操作界面；已开着的界面若位置与设置不符，自动挪过去（P1-7：挪走后必须关掉旧位置那份，不留双面板） */
 	async activateView(): Promise<void> {
 		const { workspace } = this.app;
 
 		const existing = workspace.getLeavesOfType(VIEW_TYPE_DICE_TABLE);
 		if (existing.length > 0) {
-			const leaf = existing[0];
-			const inSidebar = this.isInSidebar(leaf);
-			if (inSidebar === (this.settings.openLocation === "sidebar")) {
-				// 位置符合设置，只聚焦
-				void workspace.revealLeaf(leaf);
+			const wantSidebar = this.settings.openLocation === "sidebar";
+			// 位置符合设置的留下；历史上被双面板 bug 留下多份时，其余全是陈旧份，一并关掉
+			const keep = existing.find((candidate) => this.isInSidebar(candidate) === wantSidebar);
+			if (keep) {
+				void workspace.revealLeaf(keep);
+				for (const stale of existing) {
+					if (stale !== keep) stale.detach();
+				}
 				return;
 			}
-			// 位置不符：挪到新位置（用 setViewState 原地换容器，状态不丢）
+			// 没有一份位置符合：把第一份挪到新位置（用 setViewState 原地换容器，状态不丢），成功后关掉旧位置那份
+			const leaf = existing[0];
 			const state = leaf.getViewState();
-			if (this.settings.openLocation === "sidebar") {
-				const target = workspace.getRightLeaf(false);
-				if (target) {
+			const target = wantSidebar ? workspace.getRightLeaf(false) : workspace.getLeaf(true);
+			if (target) {
+				try {
 					await target.setViewState(state);
 					void workspace.revealLeaf(target);
-				}
-			} else {
-				const target = workspace.getLeaf(true);
-				if (target) {
-					await target.setViewState(state);
-					void workspace.revealLeaf(target);
+					leaf.detach();
+				} catch {
+					// setViewState 失败：不关旧 leaf，保持可用（不比修复前更坏）
 				}
 			}
 			return;

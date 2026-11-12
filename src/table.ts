@@ -52,7 +52,7 @@ export interface Dice {
 	pools: Pool[];
 	/** 池级随机（阿麦 2026-10-22，#12/#13）：每摇随机抽 N 个池；0＝不随机（全摇） */
 	randomPoolCount: number;
-	/** 池级随机是否允许同一池被重复抽中（#13，`×N池重复`） */
+	/** 池级随机是否允许同一池被重复抽中（#13，`×N重复`） */
 	randomPoolRepeat: boolean;
 }
 
@@ -86,7 +86,7 @@ export function parseTable(text: string): ParsedTable {
 	for (const rawLine of body.split(/\r?\n/)) {
 		const line = rawLine.trimEnd();
 
-		// H1：骰子名（恰好一个 #，且不是 ##；标题尾可带 ×N池 池级随机标记）
+		// H1：骰子名（恰好一个 #，且不是 ##；标题尾可带 ×N 池级随机标记）
 		const h1 = /^#\s+(?<text>.+)$/.exec(line);
 		if (h1?.groups) {
 			const parsed = parseDiceTitle(h1.groups.text);
@@ -252,12 +252,29 @@ export function parseFace(raw: string): Face {
 	return { text: m.groups.name.trim(), weight: Math.max(1, parseInt(m.groups.n, 10)), ref };
 }
 
-/** 收集一套骰子里的全部引用目标（池引用＋面级链式，含子池递归；供索引期定位 [[ ]] 外部文件，阿麦 10-22 #11b） */
+/** 收集一套骰子里的全部引用目标（池引用＋面级链式＋面文本里的占位符，含子池递归；供索引期定位 [[ ]] 外部文件） */
 export function collectRefTargets(dice: Dice): string[] {
 	const out: string[] = [];
+	const seen = new Set<string>();
+	const push = (v: string): void => {
+		const s = v.trim();
+		if (s && !seen.has(s)) {
+			seen.add(s);
+			out.push(s);
+		}
+	};
+	// 占位符 `{目标}`：与 -> 同一条索引通道（阿麦 10-30：跨文档词库放在骰表文件夹外时也能被加载）
+	const PLACEHOLDER = /\{([^{}\n]+)\}/g;
+	const pushPlaceholders = (text: string): void => {
+		if (!text.includes("{")) return;
+		for (const m of text.matchAll(PLACEHOLDER)) push(m[1]);
+	};
 	const walkPool = (p: Pool): void => {
-		if (p.ref) out.push(p.ref);
-		for (const f of p.faces) if (f.ref) out.push(f.ref);
+		if (p.ref) push(p.ref);
+		for (const f of p.faces) {
+			if (f.ref) push(f.ref);
+			pushPlaceholders(f.text);
+		}
 		for (const s of p.subPools) walkPool(s);
 	};
 	for (const p of dice.pools) walkPool(p);
@@ -335,6 +352,65 @@ export function linkCandidates(rawPath: string, basePath: string | null): string
 	return out;
 }
 
+/** 展开多套骰子的全部池（含 H3 子池，递归；阿麦 10-30：H3 子池也要能被 -> / {占位符} 引用） */
+export function allPoolsDeep(dice: Dice[]): Pool[] {
+	const out: Pool[] = [];
+	const walk = (p: Pool): void => {
+		out.push(p);
+		for (const s of p.subPools) walk(s);
+	};
+	for (const d of dice) for (const p of d.pools) walk(p);
+	return out;
+}
+
+/**
+ * 引用是否指向「当前文件」：指向则返回池名，否则 null（阿麦 10-30 方案 A 用）。
+ * 支持裸名、`[[文件#池]]`（含别名/最短链/库内路径/绝对/相对）、`[显示](文件.md#池)`、`文件.md#池`。
+ * 纯函数，供 view 与 e2e 共用。
+ */
+export function refLocalPoolName(ref: string, currentFile: string | null): string | null {
+	const t = ref.trim();
+	const wiki = /^\[\[(?<inner>.+)\]\]$/.exec(t);
+	const md = extractLinkPath(t);
+	let filePart = "";
+	let name: string | null = null;
+	if (wiki?.groups || md !== null) {
+		const inner = wiki?.groups ? wiki.groups.inner.split("|")[0].trim() : md!;
+		const hash = inner.indexOf("#");
+		if (hash === -1) return null;
+		filePart = inner.slice(0, hash).trim();
+		name = inner.slice(hash + 1).trim();
+	} else {
+		const hash = t.indexOf("#");
+		if (hash !== -1) {
+			filePart = t.slice(0, hash).trim();
+			name = t.slice(hash + 1).trim();
+		} else {
+			// 裸名：仅当前文档
+			return t || null;
+		}
+	}
+	if (!name) return null;
+	if (!filePart) return name; // [[#池名]]
+	if (!currentFile) return null;
+	for (const c of linkCandidates(filePart, currentFile)) {
+		const withExt = c.endsWith(".md") ? c : `${c}.md`;
+		if (withExt === currentFile) return name;
+	}
+	return null;
+}
+
+/** 本套骰子里「被引用且指向当前文件」的池名（去重；方案 A 隐藏清单） */
+export function referencedPoolNames(refs: string[], currentFile: string | null, localTitles: string[]): string[] {
+	const titles = new Set(localTitles);
+	const out = new Set<string>();
+	for (const ref of refs) {
+		const name = refLocalPoolName(ref, currentFile);
+		if (name && titles.has(name)) out.add(name);
+	}
+	return [...out];
+}
+
 /** 按权重随机挑一个下标（cumulative picking） */
 function weightedIndex(weights: number[]): number {
 	const total = weights.reduce((a, b) => a + b, 0);
@@ -393,13 +469,15 @@ export function rollNumberRange(range: NumberRange, count: number, allowRepeat: 
 			for (let v = range.min; v <= range.max; v++) all.push(String(v));
 			return all;
 		}
-		const pool: number[] = [];
-		for (let v = range.min; v <= range.max; v++) pool.push(v);
+		// 不放回抽样用 Set 记录已抽值——内存只跟 count 有关，不再按区间长度建数组
+		// （阿麦 10-30：1~10000000 摇 3 个原实现要建一千万个元素的数组，卡 0.2 秒、涨 200MB）
 		const out: string[] = [];
-		for (let k = 0; k < n; k++) {
-			const j = Math.floor(Math.random() * pool.length);
-			out.push(String(pool[j]));
-			pool.splice(j, 1);
+		const seen = new Set<number>();
+		while (out.length < n) {
+			const v = range.min + Math.floor(Math.random() * span);
+			if (seen.has(v)) continue;
+			seen.add(v);
+			out.push(String(v));
 		}
 		return out;
 	}
@@ -419,21 +497,13 @@ export function rollNumberRange(range: NumberRange, count: number, allowRepeat: 
 	return out;
 }
 
-/** 从单个池里随机抽一条（单项重摇也用它） */
-export function rollPool(pool: Pool): string {
-	return pool.numberRange
-		? rollNumberRange(pool.numberRange, pool.count, pool.allowRepeat)[0]
-		: rollPoolValues(pool)[0];
-}
-
-/** 从每个池里各随机抽一组，返回 [池名, 结果数组] 列表 */
-export function rollDice(dice: Dice): Array<[string, string[]]> {
-	const result: Array<[string, string[]]> = [];
-	for (const pool of dice.pools) {
-		result.push([
-			pool.title,
-			pool.numberRange ? rollNumberRange(pool.numberRange, pool.count, pool.allowRepeat) : rollPoolValues(pool),
-		]);
-	}
-	return result;
+/**
+ * 有面 + 写了区间时的「每次摇几个面」（阿麦 2026-10-30 定的新语义）：
+ * `## 池 1~10` + 20 个面 → 每次摇随机 1~10 个面（不重复，面不够就给全部）。
+ * 区间端点取整、至少 1；区间只对「摇几个」生效，不再兼作数字池。
+ */
+export function pickCountFromRange(range: NumberRange): number {
+	const lo = Math.max(1, Math.round(range.min));
+	const hi = Math.max(lo, Math.round(range.max));
+	return lo + Math.floor(Math.random() * (hi - lo + 1));
 }

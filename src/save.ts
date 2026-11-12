@@ -88,3 +88,23 @@ export function getISOWeek(d: Date): number {
 	const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
 	return Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
 }
+
+/**
+ * 找「光标所在段落」的最后一行下标（阿麦 10-30 修正写入笔记定位）：
+ * - 光标落在空行/标题行 → 就插在这一行之后（返回该行）；
+ * - 普通段落 → 一直找到下一个空行或标题之前；
+ * 越界或空文档统一夹在合法范围内，调用方不会再出现 getLine(-1)。
+ */
+export function paragraphEndLine(lines: string[], start: number): number {
+	if (lines.length === 0) return 0;
+	const at = Math.min(Math.max(0, start), lines.length - 1);
+	const isHeading = (s: string): boolean => /^\s{0,3}#{1,6}\s/.test(s);
+	if (lines[at].trim().length === 0 || isHeading(lines[at])) return at;
+	let end = at;
+	while (end + 1 < lines.length) {
+		const next = lines[end + 1];
+		if (next.trim().length === 0 || isHeading(next)) break;
+		end++;
+	}
+	return end;
+}

@@ -4,9 +4,18 @@
 // 结果卡要序列化进 SVG foreignObject 渲染成图，外部 CSS 类在序列化后不会生效，
 // 内联是技术必需而非疏漏（审查如挑此条，按 004 先例在提交说明中引用本注释）。
 
+/** 结果卡的一行。1.5.1 自 022 移植（阿麦 10-30：树形排布，图不再被盒子撑长——022 同款教训「每层都套一张卡片，图被撑得很长」）；group＝标题行，row＝池名+值；level 控制缩进层级 */
+export interface ImageRow {
+	pool: string;
+	values: string[];
+	kind?: "row" | "group";
+	/** 缩进层级：0＝顶层，1＝实例/一级子项，2 以上更深 */
+	level?: number;
+}
+
 export interface ImageCardData {
 	diceTitle: string;
-	rows: Array<{ pool: string; values: string[] }>;
+	rows: ImageRow[];
 	rolledAt: Date;
 	format: "png" | "jpg";
 }
@@ -27,7 +36,6 @@ function setCss(el: HTMLElement, css: string): void {
 /** 构建结果卡 DOM（全部内联样式，序列化进 SVG 时样式不丢） */
 function buildCard(data: ImageCardData): { el: HTMLElement; height: number } {
 	const bg = cssVar("--background-primary", "#202020");
-	const panel = cssVar("--background-secondary", "#2a2a2a");
 	const text = cssVar("--text-normal", "#dcddde");
 	const muted = cssVar("--text-muted", "#999999");
 	const accent = cssVar("--interactive-accent", "#7c3aed");
@@ -46,18 +54,47 @@ function buildCard(data: ImageCardData): { el: HTMLElement; height: number } {
 	setCss(title, `font-size:19px;font-weight:700;padding-bottom:10px;border-bottom:1px solid ${border};margin-bottom:12px;`);
 	title.textContent = data.diceTitle;
 
-	// 各项结果
+	// 各项结果：树形排布。层级靠缩进 + 字号 + 粗细 + 颜色区分
+	// （之前每层都套一张卡片，图被撑得很长，四层缩进又只有 14px，从属关系看不出来）
 	for (const row of data.rows) {
-		const item = el.createDiv();
-		setCss(item, `background:${panel};border:1px solid ${border};border-radius:8px;padding:10px 14px;margin-bottom:10px;`);
+		const kind = row.kind ?? "row";
+		const level = row.level ?? (kind === "group" ? 0 : 1);
+		const indent = level * 15;
 
-		const poolEl = item.createDiv();
-		setCss(poolEl, `font-size:12px;color:${muted};margin-bottom:4px;`);
-		poolEl.textContent = row.pool;
+		if (kind === "group") {
+			const g = el.createDiv();
+			const isTop = level === 0;
+			setCss(
+				g,
+				`font-size:${isTop ? 15 : 12.5}px;font-weight:${isTop ? 700 : 600};` +
+					`color:${isTop ? accent : text};letter-spacing:${isTop ? "0" : "0.01em"};` +
+					`margin:${isTop ? 15 : 9}px 0 ${isTop ? 7 : 4}px;padding-left:${indent}px;`
+			);
+			g.textContent = row.pool;
+			continue;
+		}
 
-		const valueEl = item.createDiv();
-		setCss(valueEl, `font-size:15px;color:${text};`);
-		valueEl.textContent = row.values.join("，");
+		const line = el.createDiv();
+		const blank = row.values.length === 0;
+		setCss(
+			line,
+			`display:flex;align-items:baseline;gap:10px;` +
+				`padding:${blank ? "7px" : "4px"} 0 ${blank ? "2px" : "4px"} ${indent}px;`
+		);
+
+		const name = line.createDiv();
+		setCss(
+			name,
+			`flex:0 0 auto;min-width:84px;font-size:${blank ? 12.5 : 12}px;` +
+				`color:${blank ? text : muted};${blank ? "font-weight:600;" : ""}`
+		);
+		name.textContent = row.pool;
+
+		if (!blank) {
+			const val = line.createDiv();
+			setCss(val, `flex:1;font-size:13.5px;color:${text};line-height:1.55;`);
+			val.textContent = row.values.join("，");
+		}
 	}
 
 	// 页脚：摇出时间
