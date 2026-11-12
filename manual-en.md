@@ -1,7 +1,7 @@
 # Dice Table — Complete User Manual
 
-> Applies to: 1.5.0+ ｜ Plugin ID: `dice-table` ｜ Marketplace: https://community.obsidian.md/plugins/dice-table
-> Updated: 2026-10-30
+> Applies to: 1.5.1+ ｜ Plugin ID: `dice-table` ｜ Marketplace: https://community.obsidian.md/plugins/dice-table
+> Updated: 2026-11-12
 
 ---
 
@@ -126,7 +126,7 @@ Rules:
 
 ### Chain references: keep rolling after a hit
 
-`- Face -> Target`: when this face is drawn, the target pool is rolled once more and the results are joined using the format from Settings (default: `Magic item: legendary (legendary)`; wrap/separator symbols are configurable).
+`- Face -> Target`: when this face is drawn, the target pool is rolled once more and the results are joined using the format from Settings — **default `Magic item (legendary)`**. The wrap symbol can be parentheses (default), brackets or none; **the separator is used only when wrap is set to none** (default colon → `Magic item: legendary`).
 
 ```markdown
 ## Treasure
@@ -193,7 +193,7 @@ Three reference shapes (what goes after `->`):
 | `## Hair -> Hair library#Color` | References a **single pool** inside the target |
 | `## CP ×2 -> Character card` | Rolls **N instances** at once, each expanding every pool of the target |
 
-**How to write a library (important)**: a library is just an ordinary table — `# Library name` + `## Pool name` + dash faces. **Faces cannot sit directly under an H1** (faces are only recognised under H2/H3 pool headings; faces directly under an H1 are ignored). Several dice referencing each other inside one file is perfectly fine (the sample `CP generator.md` crams 5 dice into one file, all cross-referencing); for cross-file references see the links section below.
+**How to write a library (important)**: a library is just an ordinary table — `# Library name` + `## Pool name` + dash faces; **H3 sub-pools work as banks too** (`{sub-pool name}` or `-> sub-pool name`). **Faces cannot sit directly under an H1** (faces are only recognised under H2/H3 pool headings; faces directly under an H1 are ignored). Several dice referencing each other inside one file is perfectly fine (the sample `CP generator.md` crams 5 dice into one file, all cross-referencing); for cross-file references see the links section below.
 
 ### [[ ]] wiki links and []() Markdown links: point at an exact file
 
@@ -289,6 +289,21 @@ Number pools save, write to notes, export as images, land in history and re-roll
 ## Temperature ×3repeat -10~10
 ```
 
+### When the pool has faces too: the range means "roll this many faces" (new in 1.4.1)
+
+If `## Loot 1~5` has faces underneath, the range no longer makes it a number pool — it means **roll 1~5 faces each time**:
+
+```markdown
+## Loot 1~5
+- Coins
+- Gem
+- Scroll
+- Potion
+- Key
+```
+
+Each roll gives 1~5 entries, **without repeats**; if the pool has fewer faces you get all of them. If `×N` is also written, the range wins. With **no faces**, it stays a number pool (previous section).
+
 ---
 
 ## 7. Word banks & sentence templates: `{placeholders}`
@@ -368,21 +383,28 @@ Handled automatically (nothing for you to do):
 - **Sticky toolbar** (new layout in 1.6.0): one row pinned to the top; however far you scroll, it stays put —
   - **Dice icon**: rolls every pool once (no tooltip — it does what it says);
   - **File-name dropdown**: switch to another table file in the same folder; a second "Dice" dropdown appears below when the file has several dice;
-  - **Open file** (tooltip on hover): opens the current table's `.md` directly — tweak pools without hunting through your vault (an already-open tab is focused instead of duplicated, and the note you are editing is never overwritten);
-  - **⋮ More actions**: a native menu keeps the less-frequent actions out of the way — **Save** (format, mode and naming template as configured), **Copy result** (to the clipboard as `- Pool: result`), **Write to note**, and **Change table folder** (a dialog with official folder suggestions; stays in sync with the settings tab — change it on either side and both update instantly);
-- **↻ next to a row**: re-rolls only that pool (a multi-select pool re-rolls as a whole group); other rows stay as they are.
-- **History (N)**: a collapsible area below the results keeping the last 20 rolls; "Load" puts a roll back into the result area (loading a roll from another dice switches file and dice automatically). History is persisted — it survives restarting Obsidian.
+  - **Save** (tooltip on hover; greyed out until there is a result): saves with your format, mode and naming template — the action you reach for most, so it sits right next to the dropdown;
+  - **⋮ More actions**: a native menu keeps the less-frequent actions out of the way — **Copy result** (to the clipboard as `- Pool: result`), **Write to note** | **Open file** (opens the current table's `.md` directly — tweak pools without hunting through your vault; an already-open tab is focused instead of duplicated, and the note you are editing is never overwritten), and **Change table folder** (a dialog with official folder suggestions; stays in sync with the settings tab — change it on either side and both update instantly);
+- **Result area (lighter since 1.6.1)**: pool names are muted, values are normal text, one item per line, and the row highlights on hover — long results stay easy to scan.
+- **↻ on any row — every level re-rolls on its own**: re-rolls just that item (top level, a nested pool, or an item inside one of several instances) and leaves every other row untouched; a reference pool or a multi-select pool re-rolls as a whole group. **Instance headings ("#N") also carry an ↻** that re-rolls only that set.
+- **History (N)**: a collapsible area below the results keeping the last 20 rolls; "Load" puts a roll back into the result area (loading a roll from another dice switches file and dice automatically). **Both a full roll and a single re-roll add an entry** (so a re-rolled result can be loaded later); each entry is an independent snapshot and later re-rolls never alter existing history. History is persisted — it survives restarting Obsidian.
 
 ---
 
-## 11. Settings at a glance (6 items)
+## 11. Settings at a glance
 
 1. **Dice folder** — where your tables live (the field suggests existing folders as you type; a new path is created on first save; changes take effect immediately, no restart);
 2. **Default save folder** — where results are written (created automatically if missing, including nested paths);
 3. **File name template** — see section 8;
 4. **Save format** — Markdown / PNG / JPG;
 5. **Save mode** — new file / append (locked against the format, see section 9);
-6. **Open location** — main tab / right sidebar.
+6. **Open location** — main tab / right sidebar;
+7. **Append file name template** — which file append mode writes into (default `{H1}`);
+8. **Multi-instance save format** — grouped (default) / separate block each;
+9. **Show referenced pools** (off by default) — whether pools referenced by `->` or `{banks}` also get their own row. **Off** = sources only, no duplicate row; **On** = shown, but a name has only one value per roll;
+10. **Write-to-note position** — after the cursor paragraph (default) / end of note;
+11. **Chain wrap / separator** — wrap wins (parentheses by default); the separator applies only when wrap is set to none;
+12. **User manual** — opens the built-in manual.
 
 The interface language **follows Obsidian automatically**: pick Simplified Chinese in Obsidian and the plugin speaks Chinese; any other language shows English. There is no manual language switch.
 
