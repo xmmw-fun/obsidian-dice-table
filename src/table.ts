@@ -363,53 +363,6 @@ export function allPoolsDeep(dice: Dice[]): Pool[] {
 	return out;
 }
 
-/**
- * 引用是否指向「当前文件」：指向则返回池名，否则 null（阿麦 10-30 方案 A 用）。
- * 支持裸名、`[[文件#池]]`（含别名/最短链/库内路径/绝对/相对）、`[显示](文件.md#池)`、`文件.md#池`。
- * 纯函数，供 view 与 e2e 共用。
- */
-export function refLocalPoolName(ref: string, currentFile: string | null): string | null {
-	const t = ref.trim();
-	const wiki = /^\[\[(?<inner>.+)\]\]$/.exec(t);
-	const md = extractLinkPath(t);
-	let filePart = "";
-	let name: string | null = null;
-	if (wiki?.groups || md !== null) {
-		const inner = wiki?.groups ? wiki.groups.inner.split("|")[0].trim() : md!;
-		const hash = inner.indexOf("#");
-		if (hash === -1) return null;
-		filePart = inner.slice(0, hash).trim();
-		name = inner.slice(hash + 1).trim();
-	} else {
-		const hash = t.indexOf("#");
-		if (hash !== -1) {
-			filePart = t.slice(0, hash).trim();
-			name = t.slice(hash + 1).trim();
-		} else {
-			// 裸名：仅当前文档
-			return t || null;
-		}
-	}
-	if (!name) return null;
-	if (!filePart) return name; // [[#池名]]
-	if (!currentFile) return null;
-	for (const c of linkCandidates(filePart, currentFile)) {
-		const withExt = c.endsWith(".md") ? c : `${c}.md`;
-		if (withExt === currentFile) return name;
-	}
-	return null;
-}
-
-/** 本套骰子里「被引用且指向当前文件」的池名（去重；方案 A 隐藏清单） */
-export function referencedPoolNames(refs: string[], currentFile: string | null, localTitles: string[]): string[] {
-	const titles = new Set(localTitles);
-	const out = new Set<string>();
-	for (const ref of refs) {
-		const name = refLocalPoolName(ref, currentFile);
-		if (name && titles.has(name)) out.add(name);
-	}
-	return [...out];
-}
 
 /** 按权重随机挑一个下标（cumulative picking） */
 function weightedIndex(weights: number[]): number {

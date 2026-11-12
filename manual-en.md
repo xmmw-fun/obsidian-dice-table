@@ -190,12 +190,12 @@ Three reference shapes (what goes after `->`):
 | You write | Effect |
 |-----------|--------|
 | `## Pool -> Character card` | References a **whole dice**: every pool of the target rolls once |
-| `## Hair -> Hair library#Color` | References a **single pool** inside the target |
+| `## Hair -> Hair library#Color` | References a **single pool** inside the target (current document only) |
 | `## CP ×2 -> Character card` | Rolls **N instances** at once, each expanding every pool of the target |
 
-**How to write a library (important)**: a library is just an ordinary table — `# Library name` + `## Pool name` + dash faces; **H3 sub-pools work as banks too** (`{sub-pool name}` or `-> sub-pool name`). **Faces cannot sit directly under an H1** (faces are only recognised under H2/H3 pool headings; faces directly under an H1 are ignored). Several dice referencing each other inside one file is perfectly fine (the sample `CP generator.md` crams 5 dice into one file, all cross-referencing); for cross-file references see the links section below.
+**How to write a library (important)**: a library is just an ordinary table — `# Library name` + `## Pool name` + dash faces; **H3 sub-pools work as banks too** (`{sub-pool name}` or `-> sub-pool name`). **Faces cannot sit directly under an H1** (faces are only recognised under H2/H3 pool headings; faces directly under an H1 are ignored). Several dice referencing each other inside one file is perfectly fine (the sample `CP generator.md` crams 5 dice into one file, all cross-referencing); **cross-file references use the link forms below only**.
 
-### [[ ]] wiki links and []() Markdown links: point at an exact file
+### [[ ]] wiki links and []() Markdown links: the only way to cross files
 
 After `->` you can write a link, so references hit exactly what you mean. **All three Obsidian wiki-link forms are supported, and Markdown links `[]()` work too** (that is the form Obsidian uses when the wiki-link setting is off):
 
@@ -206,10 +206,11 @@ After `->` you can write a link, so references hit exactly what you mean. **All 
 | Absolute | `## Race -> [[/World/Race library]]` | Leading slash; same as the vault-root path |
 | Relative | `## Race -> [[../Lib/Race library]]` | Relative to the current table file's folder (`..` up, `.` here) |
 | Markdown link | `## Race -> [Race library](World/Race library.md)` | `[text](path)` form; the same path rules apply (`../`, `#anchor`; spaces may be written as `%20`) |
+| `#Pool` only | `## Personality -> [[#Personality]]`, `## Personality -> [Personality](#Personality)` | No file name → references a pool **in the current document** |
 
 Add `#` to point at an exact dice or pool: `## Character -> [[Character card#Template]]`, `## Hair -> [[Hair library#Color]]`, `## Character -> [Character card](Character card.md#Template)`.
 
-**Division of labour with plain names**: link forms follow Obsidian's own resolution rules and can reach files in **other documents (including outside the dice folder)**; a plain name (`-> Race library`) is looked up **inside the current document only** — cross-document references always use link forms, never bare names (finalized by 阿麦 on 2026-10-23: if a bare name is not found the plugin says so, it never silently searches elsewhere).
+**Division of labour with plain names (tightened by 阿麦 on 2026-11-12)**: **only explicit links (`[[]]` / `[]()`) can cross files**; every other shape — a plain name (`-> Race library`), `X#Y` (`-> Skill library#Skill`), or a bare path without brackets (`-> Folder/Skill library#Skill`) — is resolved **inside the current document only**. If it is not found the plugin says so; it never silently searches elsewhere. A bare path ignores the folder part and uses only the trailing H1 name (e.g. `-> Folder/Skill library#Skill` looks for pool `Skill` under H1 `Skill library` in the current document).
 
 ---
 
@@ -330,6 +331,7 @@ Write `{pool name}` inside a face and the plugin fills it with a random word fro
 |-----------|----------|
 | `{Color}` | Fills one word from the same-named pool **in this document**; weights `^N` apply |
 | `{[[File#Pool]]}`, `{[text](file.md#Pool)}` | Cross-document — same rules as `->` references (a `\|alias` is stripped) |
+| `{X#Y}` (e.g. `{Skill library#Skill}`) | Looks for pool `Y` under H1 `X` **in the current document only** (tightened by 阿麦 on 2026-11-12: placeholders follow the same cross-file rules as `->`) |
 | `{Strength}` (a number pool) | Fills a number from the range |
 | Same placeholder appears twice | Rolled **once per roll** — every occurrence gets the same word |
 | `{Colour}` (no such pool / empty pool) | Kept literally as `{Colour}`, plus a notice after the roll — typos are visible immediately |
@@ -385,7 +387,7 @@ Handled automatically (nothing for you to do):
   - **File-name dropdown**: switch to another table file in the same folder; a second "Dice" dropdown appears below when the file has several dice;
   - **Save** (tooltip on hover; greyed out until there is a result): saves with your format, mode and naming template — the action you reach for most, so it sits right next to the dropdown;
   - **⋮ More actions**: a native menu keeps the less-frequent actions out of the way — **Copy result** (to the clipboard as `- Pool: result`), **Write to note** | **Open file** (opens the current table's `.md` directly — tweak pools without hunting through your vault; an already-open tab is focused instead of duplicated, and the note you are editing is never overwritten), and **Change table folder** (a dialog with official folder suggestions; stays in sync with the settings tab — change it on either side and both update instantly);
-- **Result area (lighter since 1.6.1)**: pool names are muted, values are normal text, one item per line, and the row highlights on hover — long results stay easy to scan.
+- **Result area (lighter since 1.6.0)**: pool names are muted, values are normal text, one item per line, and the row highlights on hover — long results stay easy to scan.
 - **↻ on any row — every level re-rolls on its own**: re-rolls just that item (top level, a nested pool, or an item inside one of several instances) and leaves every other row untouched; a reference pool or a multi-select pool re-rolls as a whole group. **Instance headings ("#N") also carry an ↻** that re-rolls only that set.
 - **History (N)**: a collapsible area below the results keeping the last 20 rolls; "Load" puts a roll back into the result area (loading a roll from another dice switches file and dice automatically). **Both a full roll and a single re-roll add an entry** (so a re-rolled result can be loaded later); each entry is an independent snapshot and later re-rolls never alter existing history. History is persisted — it survives restarting Obsidian.
 

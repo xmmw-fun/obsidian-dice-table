@@ -1,6 +1,6 @@
 import { ItemView, Menu, Notice, WorkspaceLeaf, TFolder, TFile, MarkdownView, setIcon, setTooltip } from "obsidian";
 import type DiceTablePlugin from "./main";
-import { parseTable, collectRefTargets, allPoolsDeep, referencedPoolNames, Dice, Pool, linkCandidates, extractLinkPath } from "./table";
+import { parseTable, collectRefTargets, allPoolsDeep, Dice, Pool, linkCandidates, extractLinkPath } from "./table";
 import { rollPoolFull, rollDiceFull, RefResolver, ResultItem, ChainFormat, defaultResolvePool, HistoryEntry, flattenItem, applyPlaceholders, createRollContext } from "./result";
 import { resultTextLines, imageRows, resultMarkdownLines } from "./result-format";
 import { renderNameTemplate, resolveUniquePath, sanitizeFilename, paragraphEndLine } from "./save";
@@ -228,15 +228,18 @@ export class DiceTableView extends ItemView {
 			const pending = new Set<string>();
 			for (const src of sources) {
 				for (const ref of src.dice.flatMap((d) => collectRefTargets(d))) {
-				// 双链 [[X#名]] 取括号内 # 前部分（先剥「|别名」）；md 链接 [text](path) 取 path（阿麦 10-23）；
-				// 否则路径形式（含 / 或 .md）；裸名跳过（只在骰子文件夹内匹配）
-				const wiki = /^\[\[(?<inner>.+)\]\]$/.exec(ref.trim());
-				let filePart: string | null = null;
-				if (wiki?.groups) filePart = wiki.groups.inner.trim().split("|")[0].trim().split("#")[0];
-				else {
-					const mdPath = extractLinkPath(ref);
-					filePart = mdPath === null ? splitTarget(ref).path : mdPath.split("#")[0];
-				}
+					// 只有显式链接写法才跨文件增量加载（阿麦 2026-11-12 收紧）：
+					// 双链 [[X#名]] 取括号内 # 前部分（先剥「|别名」）；md 链接 [text](path) 取 path（阿麦 10-23）；
+					// 裸写法（X#Y、裸路径、纯裸名）一律不加载——它们只在当前文档解析，无需外部文件
+					const wiki = /^\[\[(?<inner>.+)\]\]$/.exec(ref.trim());
+					let filePart: string | null = null;
+					if (wiki?.groups) {
+						filePart = wiki.groups.inner.trim().split("|")[0].trim().split("#")[0];
+					} else {
+						const mdPath = extractLinkPath(ref);
+						if (mdPath === null) continue;
+						filePart = mdPath.split("#")[0];
+					}
 					if (!filePart) continue;
 					const file = locate(filePart, src.path);
 					if (file && !loaded.has(file.path)) {
@@ -261,11 +264,12 @@ export class DiceTableView extends ItemView {
 	}
 
 /**
- * 构造引用解析器（阿麦 2026-10-22 定、2026-10-23 20:47 修订钉死）：
- * - **裸名目标（`-> 种族库`，不带任何链接/路径/文件名标记）→ 仅限当前文档内的 H1 骰子/池**；
- *   跨文档一律用 `[[ ]]` 双链 / `[]()` md 链接 / `文件#名` 显式形式——绝不再静默跨文档查找；
+ * 构造引用解析器（阿麦 2026-10-22 定、10-23 20:47 修订、11-12 收紧跨文件语义）：
+ * - **只有显式链接（`[[ ]]` 双链 / `[]()` md 链接）可以跨文件**；
  * - 双链 `[[X#名]]`（含 `|别名`）/ md 链接 `[显示](路径#锚点)` → 按链接定位（三种语义候选＋Obsidian 兜底）；
- * - 路径形式目标（`-> 文件夹/文件#名`，不带方括号）→ 按库内路径精确定位。
+ *   `[[#池名]]` / `[显示](#池名)` → 当前文档的池；
+ * - 裸名（`-> 种族库`）、`X#Y`、裸路径（`-> 文件夹/文件#名`，不带方括号）→ **一律只当前文档**
+ *   （裸路径忽略路径部分，只取末段同名 H1）。
  */
 private makeResolver(): RefResolver {
 	const sources = this.diceSources;
@@ -303,6 +307,8 @@ private makeResolver(): RefResolver {
 		// 双链 [[...]] 或 md 链接 [...](...) 形式：定位文件后在文件内找（不带 #名则找同名 H1、再退第一个）
 		const link = parseLink(target) ?? parseMdLink(target);
 		if (link) {
+			// [[#池名]] / [文本](#池名)：是「当前文档的池」，不是骰子 → 返回 null 交给 findPool
+			if (!link.filePart) return null;
 			const file = locateFile(link.filePart);
 			const src = file ? sources.find((s) => s.path === file.path) : undefined;
 			if (!src) return null;
@@ -310,44 +316,72 @@ private makeResolver(): RefResolver {
 			const linkText = link.filePart.split("/").pop()!;
 			return src.dice.find((d) => d.title === linkText) ?? src.dice[0] ?? null;
 		}
-		// 路径形式（不带方括号但含 / 或 .md）：同样精确定位
 		const { path, name } = splitTarget(target);
+		// 裸路径降级（不带方括号但含 / 或 .md）：忽略路径部分，只在当前文档找末段同名 H1；
+		// 带 #池名的是池引用 → 返回 null 交给 findPool（阿麦 2026-11-12 收紧）
 		if (path) {
-			const file = locateFile(path);
-			const src = file ? sources.find((s) => s.path === file.path) : undefined;
-			if (!src) return null;
-			if (name) return src.dice.find((d) => d.title === name) ?? null;
-			const linkText = path.split("/").pop()!;
-			return src.dice.find((d) => d.title === linkText) ?? src.dice[0] ?? null;
+			if (name) return null;
+			const base = path.split("/").pop()!.replace(/\.md$/, "");
+			const cur = sources.find((s) => s.path === curPath);
+			return cur?.dice.find((d) => d.title === base) ?? null;
 		}
-		// 裸名（老写法）：**仅限当前文档内的 H1**（阿麦 10-22 定「O3 去掉」、10-23 20:47 暴怒纠正：
-		// 裸名绝不跨文档——跨文档一律用 [[ ]] / []() 链接形式；此前实现成静默跨文档按序查找是执行偏差）
+		// X#Y（不带方括号、不含 / 或 .md）：池引用 → 返回 null 交给 findPool——
+		// 否则 `## 池 -> X#Y` 会误展开当前文档 H1「Y」的整套骰子（阿麦 2026-11-12 收紧）
+		if (name) return null;
+		// 裸名（老写法）：**仅限当前文档内的 H1**（行为不变）
 		const cur = sources.find((s) => s.path === curPath);
-		return cur?.dice.find((x) => x.title === (name ?? target)) ?? null;
+		return cur?.dice.find((x) => x.title === target) ?? null;
 	};
+	/** 当前文档内按池名找池：跳过 ref 指向目标自身的池（防自引用无限递归），都自引用时回落第一个 */
+	const findLocalPool = (poolName: string | null): Pool | null => {
+		if (!poolName) return null;
+		const cur = sources.find((s) => s.path === curPath);
+		if (!cur) return null;
+		const pools = allPoolsDeep(cur.dice).filter((x) => x.title === poolName);
+		// 阿麦 2026-11-12 修复：裸名取第一个同名池时，跳过「ref 指向自身标题」的引用池——
+		// 否则 `## 性格 -> 性格` 命中自己，rollPoolFull 的 ref 分支再解析 ref 又命中同一个池，
+		// 无限递归到 MAX_DEPTH 退回空值（stack 防护在 ref 分支不生效，add 晚于递归）
+		return pools.find((x) => !(x.ref && x.ref === poolName)) ?? pools[0] ?? null;
+	};
+
+	/**
+	 * 池查找（阿麦 2026-11-12 收紧跨文件语义：只有显式链接可跨文件）：
+	 * - [[...]] / [...](...)：按链接定位（可跨文件）；[[#池名]] / [文本](#池名) → 当前文档的池；
+	 * - 裸路径（不带方括号但含 / 或 .md）→ 降级为当前文档：忽略路径，只在当前文档找末段同名 H1 的池；
+	 * - X#Y（不带方括号、不含 / 或 .md）→ 只当前文档：当前文档 H1「X」下找池「Y」；
+	 * - 纯裸名 → 只当前文档。
+	 */
 	const findPool = (target: string): Pool | null => {
-		// 池查找递归进 H3 子池（helper 在 table.ts，便于 e2e）
-		// 双链/md 链接/路径形式：定位文件后按池名找（不带池名的由 findDice 合成处理）
 		const link = parseLink(target) ?? parseMdLink(target);
-		const { path, name } = splitTarget(link ? link.filePart + (link.name ? `#${link.name}` : "") : target);
-		const filePart = link ? link.filePart : path;
-		if (filePart) {
-			if (!name && !link) return null;
-			const file = locateFile(filePart);
+		if (link) {
+			// [[#池名]] / [文本](#池名)：只写 # 不带文件名 → 当前文档的池（旧实现误取 "[[" 作文件名）
+			if (!link.filePart) return findLocalPool(link.name);
+			// [[文件#池]] / [文本](路径#池)：按链接定位（跨文件，行为不变）
+			const file = locateFile(link.filePart);
 			const src = file ? sources.find((s) => s.path === file.path) : undefined;
 			if (!src) return null;
-			return allPoolsDeep(src.dice).find((x) => x.title === name) ?? null;
+			return allPoolsDeep(src.dice).find((x) => x.title === link.name) ?? null;
 		}
-		// 裸名带 #：`文件#池名`——先按文件名匹配，再在其中找池（兼容 1.3.0 既有写法）
+		const { path, name } = splitTarget(target);
+		// 裸路径降级（不带方括号但含 / 或 .md）：忽略路径部分，只在当前文档找末段同名 H1 的池
+		if (path) {
+			const base = path.split("/").pop()!.replace(/\.md$/, "");
+			const cur = sources.find((s) => s.path === curPath);
+			const dice = cur?.dice.find((d) => d.title === base);
+			if (!dice || !name) return null;
+			return allPoolsDeep([dice]).find((x) => x.title === name) ?? null;
+		}
+		// X#Y（不带方括号、不含 / 或 .md）：只当前文档的 H1「X」下找池「Y」
+		// 阿麦 2026-11-12 收紧：移除按文件名全库匹配（旧实现会跨文件命中同名文件）
 		if (name) {
-			const filePart0 = target.split("#")[0];
-			const src = sources.find((s) => s.path.replace(/\.md$/, "").split("/").pop() === filePart0 || s.path === filePart0);
-			if (!src) return null;
-			return allPoolsDeep(src.dice).find((x) => x.title === name) ?? null;
+			const diceName = target.split("#")[0].trim();
+			const cur = sources.find((s) => s.path === curPath);
+			const dice = cur?.dice.find((d) => d.title === diceName);
+			if (!dice) return null;
+			return allPoolsDeep([dice]).find((x) => x.title === name) ?? null;
 		}
-		// 纯裸名池：**仅限当前文档**（同 findDice 口径——阿麦 10-23 20:47：裸名不跨文档）
-		const cur = sources.find((s) => s.path === curPath);
-		return cur ? allPoolsDeep(cur.dice).find((x) => x.title === target) ?? null : null;
+		// 纯裸名池：**仅限当前文档**（行为不变）
+		return findLocalPool(target);
 	};
 	// 解析失败收集（阿麦 10-23：摇完统一提示，避免用户不知道引用没生效）
 	const missed: string[] = [];
@@ -361,13 +395,21 @@ private makeResolver(): RefResolver {
 	};
 }
 
-	/** 本套骰子里「被引用且指向当前文件」的池名（方案 A 隐藏用；跨文件同名不误伤） */
-	private referencedTitles(dice: Dice): string[] {
-		return referencedPoolNames(
-			collectRefTargets(dice),
-			this.currentFile,
-			allPoolsDeep([dice]).map((p) => p.title)
-		);
+	/**
+	 * 本套骰子里「被引用且目标就是本骰子的池」的池名（方案 A 隐藏用）。
+	 * 阿麦 2026-11-12 修复：旧实现按「引用名是否在本骰子池名中」判断，裸名歧义下会误判
+	 * （如 `## 性格 -> 性格` 实际指向别处同名池，却被当成自引用隐藏）。现改为用 resolver
+	 * 精确解析引用目标，只有解析到的池**确实是本骰子的池对象**才隐藏。
+	 */
+	private referencedTitles(dice: Dice, resolver: RefResolver): string[] {
+		const localPools = allPoolsDeep([dice]);
+		const local = new Set(localPools);
+		const out = new Set<string>();
+		for (const ref of collectRefTargets(dice)) {
+			const pool = resolver.resolvePool(ref);
+			if (pool && local.has(pool)) out.add(pool.title);
+		}
+		return [...out];
 	}
 
 	/** 当前链式拼接格式（用户设置项） */
@@ -491,7 +533,7 @@ private makeResolver(): RefResolver {
 	/**
 	 * 渲染一个池的结果：普通值一行；子池另起一行、按深度递进缩进；
 	 * 有多套实例则按「第 N 个X」分组（阿麦 12:30/13:02 定稿）。
-	 * 1.6.1（阿麦 10-30 纠正）：**每一项（含任意层级的子项）都能单独重摇**——旧实现给子项传
+	 * 1.6.0（阿麦 10-30 纠正）：**每一项（含任意层级的子项）都能单独重摇**——旧实现给子项传
 	 * index=-1 被守卫挡掉，按钮点了没反应；现改成按结果树里的对象引用就地重摇，层级不限。
 	 */
 	private renderResultItem(container: HTMLElement, item: ResultItem, depth: number, isSub = false): void {
@@ -593,7 +635,7 @@ private makeResolver(): RefResolver {
 		const fmt = this.chainFormat();
 		this.lastResult = rollDiceFull(this.currentDice, resolver, fmt, {
 			showReferencedPools: this.plugin.settings.showReferencedPools,
-			hideTitles: this.referencedTitles(this.currentDice),
+			hideTitles: this.referencedTitles(this.currentDice, resolver),
 		});
 		this.noteMissed(resolver);
 		this.pushHistory();
